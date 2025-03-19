@@ -43,7 +43,6 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024):  # run hhl cir
             solution['cost'] = backend.cost(new_qtuum_circuit, shots, syntax_checker)
         except Exception:
             solution['cost'] = 0
-            
 
         # Get circuit stats
         solution['number_of_qubits'] = new_qtuum_circuit.n_qubits
