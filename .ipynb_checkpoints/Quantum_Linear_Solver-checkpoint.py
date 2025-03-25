@@ -54,7 +54,7 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024):  # run hhl cir
         result_handle = backend.process_circuit(new_qtuum_circuit, n_shots=shots)
         solution['result_handle'] = result_handle
 
-        result = backend.get_result(result_handle)  # only works if job completed
+        result = backend.get_result(result_handle, timeout=None)  # only works if job completed
         status = backend.circuit_status(result_handle)
 
         try:
