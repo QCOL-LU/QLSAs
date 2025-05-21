@@ -84,7 +84,7 @@ def generate_problem(n, cond_number=5, sparsity=0.5, is_diagonal=False, is_posit
         b = b.astype(int)
 
     # Normalize A and b, avoid division by zero
-    beta = max(norm(A), norm(b))
+    beta = max(LA.norm(A), LA.norm(b))
     # If beta is zero regenerate 
     if beta == 0:
         return generate_problem(n, cond_number, sparsity, is_diagonal, negativity, integer_elements)
