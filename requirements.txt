@@ -12,7 +12,7 @@ argon2-cffi-bindings @ file:///home/conda/feedstock_root/build_artifacts/argon2-
 astroid @ file:///home/conda/feedstock_root/build_artifacts/astroid_1735074150979/work
 asttokens @ file:///home/conda/feedstock_root/build_artifacts/asttokens_1670263926556/work
 async-generator==1.10
-async-lru @ file:///home/conda/feedstock_root/build_artifacts/async-lru_1676985229141/work
+async-lru @ file:///home/a/feedstock_root/build_artifacts/async-lru_1676985229141/work
 attrs @ file:///home/conda/feedstock_root/build_artifacts/attrs_1683424013410/work
 autopep8 @ file:///home/conda/feedstock_root/build_artifacts/autopep8_1693061251004/work
 Babel @ file:///home/conda/feedstock_root/build_artifacts/babel_1677767029043/work
@@ -120,7 +120,7 @@ jupyter_server @ file:///home/conda/feedstock_root/build_artifacts/jupyter_serve
 jupyter_server_terminals @ file:///home/conda/feedstock_root/build_artifacts/jupyter_server_terminals_1673491454549/work
 jupyterhub @ file:///home/conda/feedstock_root/build_artifacts/jupyterhub-feedstock_1681987563299/work
 jupyterlab @ file:///home/conda/feedstock_root/build_artifacts/jupyterlab_1712586972478/work
-jupyterlab-lsp @ file:///home/conda/feedstock_root/build_artifacts/jupyter-lsp-meta_1733492907176/work/jupyterlab-lsp
+jupyterlab-lsp @ file:///home/a/feedstock_root/build_artifacts/jupyter-lsp-meta_1733492907176/work/jupyterlab-lsp
 jupyterlab-pygments @ file:///home/conda/feedstock_root/build_artifacts/jupyterlab_pygments_1649936611996/work
 jupyterlab-widgets @ file:///home/conda/feedstock_root/build_artifacts/jupyterlab_widgets_1684239754370/work
 jupyterlab_git @ file:///home/conda/feedstock_root/build_artifacts/jupyterlab-git_1707314297225/work
@@ -234,12 +234,11 @@ python-lsp-jsonrpc @ file:///home/conda/feedstock_root/build_artifacts/python-ls
 python-lsp-server @ file:///home/conda/feedstock_root/build_artifacts/python-lsp-server-meta_1711734797703/work
 pytket==1.39.0
 pytket-braket==0.37.0
-pytket-nexus==2.4.0
 pytket-phir==0.9.1
 pytket-projectq==0.37.0
 pytket-qir==0.17.0
 pytket-qiskit==0.56.0
-pytket-quantinuum==0.42.0
+qnexus
 pytket-qulacs==0.39.0
 pytket_pecos==0.1.32
 pytoolconfig @ file:///home/conda/feedstock_root/build_artifacts/pytoolconfig_1733360721313/work
@@ -250,7 +249,6 @@ pyzmq @ file:///home/conda/feedstock_root/build_artifacts/pyzmq_1679316826707/wo
 qiskit==1.2.2
 qiskit-aer==0.15.1
 qiskit-ibm-runtime==0.30.0
-qnexus==0.10.0
 quantinuum-schemas==1.1.0
 quantum-pecos==0.6.0.dev8
 qulacs==0.6.10
