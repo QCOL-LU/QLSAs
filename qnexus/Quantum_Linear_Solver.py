@@ -28,7 +28,7 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024):
     if isinstance(backend, str):
         backend_name = backend
         print(f"Running on {backend_name} via qnexus")
-        compiled_circuit = qnx.compile(pytket_circuit, backend_name=backend_name, optimisation_level=2)
+        compiled_circuit = qnx.compile(pytket_circuit, device_name=backend_name, optimisation_level=2)
         
         try:
             solution['cost'] = qnx.estimate_cost(compiled_circuit, shots, backend_name=backend_name)
@@ -42,7 +42,7 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024):
         solution['two_qubit_gates'] = compiled_circuit.n_2qb_gates()
 
         print("Submitting job...")
-        job = qnx.submit(compiled_circuit, backend_name=backend_name, n_shots=shots, project_name='HHL-IR')
+        job = qnx.submit(compiled_circuit, device_name=backend_name, n_shots=shots, project_name='HHL-IR')
         print(f"Job submitted with ID: {job.job_id}")
         solution['job'] = job
         
@@ -58,7 +58,7 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024):
         solution['number_of_qubits'] = qiskit_circuit.num_qubits
         solution['circuit_depth'] = qiskit_circuit.depth()
         solution['total_gates'] = qiskit_circuit.size()
-        solution['two_qubit_gates'] = qiskit_circuit.num_ двухqubit_gates()
+        solution['two_qubit_gates'] = qiskit_circuit.num_two_qubit_gates()        
         solution['cost'] = 0
         job = backend.run(qiskit_circuit, shots=shots)
         result = job.result()

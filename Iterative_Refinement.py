@@ -1,4 +1,4 @@
-from Quantum_Linear_Solver import quantum_linear_solver
+from Quantum_Linear_Solver_2 import quantum_linear_solver
 import numpy as np
 import matplotlib.pyplot as plt
 from numpy.linalg import solve, norm

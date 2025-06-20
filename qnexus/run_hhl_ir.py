@@ -12,12 +12,12 @@ from Quantum_Linear_Solver import quantum_linear_solver
 
 def main(args):
     """Main execution function."""
+    qnx.login()
     
     # --- Print library versions ---
     print("Qiskit version:", qiskit.__version__)
     print("Qiskit Aer version:", qiskit_aer.__version__)
     print("Pytket version:", pytket.__version__)
-    print("QNexus version:", qnx.__version__)
 
     # --- Problem Definition ---
     print(f"\n--- Generating {args.size}x{args.size} Problem ---")
@@ -81,7 +81,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run HHL with Iterative Refinement on Quantinuum.")
     parser.add_argument('--size', type=int, default=2, help='Size of the linear system (e.g., 2 for 2x2).')
-    parser.add_argument('--backend', type=str, default='H2-2', help='Quantinuum backend name (e.g., H2-2).')
+    parser.add_argument('--backend', type=str, default='H1-1E', help='Quantinuum backend name (e.g., H1-1E).')
     parser.add_argument('--shots', type=int, default=1024, help='Number of shots per circuit execution.')
     parser.add_argument('--iterations', type=int, default=5, help='Max iterations for iterative refinement.')
     parser.add_argument('--plot', action='store_true', help='Display plots of error and residual norms.')
