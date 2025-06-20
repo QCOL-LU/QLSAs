@@ -1,0 +1,2 @@
+[console_scripts]
+qnx = qnexus.cli:entrypoint
