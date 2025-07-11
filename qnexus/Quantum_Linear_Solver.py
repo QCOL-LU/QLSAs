@@ -49,7 +49,7 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None)
         print(f"Circuit uploaded with ID: {circuit_ref.id}")
 
         # Step 2: Compile the circuit using the reference. This returns a NEW CircuitRef to the COMPILED circuit.
-        config = qnx.QuantinuumConfig(device_name=backend_name)
+        config = qnx.QuantinuumConfig(device_name=backend_name, attempt_batching=True)
         
         print("Compiling circuit...")
         ref_compile_job = qnx.start_compile_job(
