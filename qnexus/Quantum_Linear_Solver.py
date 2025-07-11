@@ -1,4 +1,5 @@
 from HHL_Circuit import hhl_circuit
+from datetime import datetime
 import numpy as np
 import math
 from numpy import linalg as LA
@@ -8,7 +9,7 @@ from qiskit_aer import AerSimulator
 from pytket.extensions.qiskit import qiskit_to_tk
 import qnexus as qnx
 
-def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024):
+def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None):
     """
     Run the HHL circuit on a quantum backend and post-process the result.
     The backend can be a string for a Quantinuum device (e.g., 'H2-2') or an AerSimulator instance.
@@ -23,36 +24,97 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024):
     qiskit_circuit = transpile(hhl_circ, AerSimulator())
     pytket_circuit = qiskit_to_tk(qiskit_circuit)
     
-    result = None
+    # result = None
+
+    project_ref = qnx.projects.get_or_create(name="HHL-IR")
+    qnx.context.set_active_project(project_ref)
 
     if isinstance(backend, str):
         backend_name = backend
         print(f"Running on {backend_name} via qnexus")
-        compiled_circuit = qnx.compile(pytket_circuit, device_name=backend_name, optimisation_level=2)
+
+        # Step 1: Upload the circuit. This returns a CircuitRef to the UNCOMPILED circuit.
+        circuit_name = f"hhl-circuit-{len(b)}x{len(b)}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        if iteration is not None:
+            circuit_name += f"-iter{iteration}"
         
+        print(f"Uploading circuit '{circuit_name}'...")
+        circuit_ref = qnx.circuits.upload(
+            name=circuit_name,
+            circuit=pytket_circuit,
+            project=project_ref
+        )
+        if not circuit_ref:
+            raise RuntimeError("Circuit upload failed.")
+        print(f"Circuit uploaded with ID: {circuit_ref.id}")
+
+        # Step 2: Compile the circuit using the reference. This returns a NEW CircuitRef to the COMPILED circuit.
+        config = qnx.QuantinuumConfig(device_name=backend_name)
+        
+        print("Compiling circuit...")
+        ref_compile_job = qnx.start_compile_job(
+            circuits =[circuit_ref],  # Must be a list of references
+            backend_config=config,
+            optimisation_level=2,
+            name=f"hhl-ir-compile-{len(b)}x{len(b)}-iter{iteration}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        )
+        if not ref_compile_job:
+            raise RuntimeError("Circuit compilation failed.")
+        
+        qnx.jobs.wait_for(ref_compile_job)
+        ref_compiled_circuit = qnx.jobs.results(ref_compile_job)[0].get_output()
+        print(f"Compilation successful. Compiled circuit ID: {ref_compiled_circuit.id}")
+
+        # Step 3: GET the full compiled circuit object to access its properties.
+        
+        # full_compiled_circuit = qnx.circuits.get(id = compiled_ref.id)
+        compiled_circuit = ref_compiled_circuit.download_circuit()
+
+        # Step 4: Correctly call the cost estimation function from the `jobs` module.
+        if backend_name == 'H1-1' or backend_name == 'H1-1E':
+            syntax_checker = 'H1-1SC'
+        elif backend_name == 'H2-1' or backend_name == 'H2-1E':
+            syntax_checker = 'H2-1SC'
+        else:
+            syntax_checker = None
+
         try:
-            solution['cost'] = qnx.estimate_cost(compiled_circuit, shots, backend_name=backend_name)
+            # Use the compiled reference for cost estimation
+            solution['cost'] = qnx.circuits.cost(
+                circuit_ref=ref_compiled_circuit, 
+                n_shots=shots, 
+                backend_config=config,
+                syntax_checker=syntax_checker
+            )
         except Exception as e:
             print(f"Cost estimation failed: {e}")
             solution['cost'] = 0
 
+        # Step 5: Access properties from the full_compiled_circuit object.
         solution['number_of_qubits'] = compiled_circuit.n_qubits
         solution['circuit_depth'] = compiled_circuit.depth()
         solution['total_gates'] = compiled_circuit.n_gates
         solution['two_qubit_gates'] = compiled_circuit.n_2qb_gates()
 
-        print("Submitting job...")
-        job = qnx.submit(compiled_circuit, device_name=backend_name, n_shots=shots, project_name='HHL-IR')
-        print(f"Job submitted with ID: {job.job_id}")
-        solution['job'] = job
+        # Step 6: Execute the circuit
+        print("Executing job...")
+        ref_execute_job = qnx.start_execute_job(
+            circuits =[ref_compiled_circuit],  # Must be a list of references
+            n_shots=[shots],
+            backend_config=config,
+            name=f"hhl-ir-execute-{len(b)}x{len(b)}-iter{iteration}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        )
         
         print("Waiting for results...")
-        result = job.results(timeout_min=30)
-        status = job.status()
-        print(f"Job status: {status}")
+        qnx.jobs.wait_for(ref_execute_job, timeout = None)
+        ref_result = qnx.jobs.results(ref_execute_job)[0] #.get_output() ?
+        print(f"Execution successful. Job ID: {ref_result.id}")
+
+        result = ref_result.download_result()
         solution['runtime'] = 'N/A with qnexus'
 
     elif isinstance(backend, AerSimulator):
+        # Simulator logic remains unchanged
         print(f"Running on {backend.name}")
         qiskit_circuit = transpile(hhl_circ, backend, optimization_level=3)
         solution['number_of_qubits'] = qiskit_circuit.num_qubits
@@ -62,7 +124,7 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024):
         solution['cost'] = 0
         job = backend.run(qiskit_circuit, shots=shots)
         result = job.result()
-        solution['job'] = job
+        solution['job id'] = job
     else:
         raise TypeError("backend should be a string (backend_name) or an AerSimulator instance")
 

@@ -20,7 +20,7 @@ def IR(A, b, precision, max_iter, backend, plot=False):
     res_list, error_list = [], []
 
     print("IR: Obtaining initial solution...")
-    initial_solution = quantum_linear_solver(A, b, backend=backend, shots=1024)
+    initial_solution = quantum_linear_solver(A, b, backend=backend, shots=1024, iteration=0)
     x = initial_solution['x']
     r = b - np.dot(A, x)
     error_list.append(norm(csol - x))
@@ -31,7 +31,7 @@ def IR(A, b, precision, max_iter, backend, plot=False):
     while (norm(r) > precision and iteration <= max_iter):
         print(f"IR Iteration: {iteration}")
         new_r = nabla * r
-        result = quantum_linear_solver(A, new_r, backend=backend, shots=1024)
+        result = quantum_linear_solver(A, new_r, backend=backend, shots=1024, iteration=iteration)
         c = result['x']
         alpha = norm_estimation(A, new_r, c)
         x += (alpha / nabla) * c

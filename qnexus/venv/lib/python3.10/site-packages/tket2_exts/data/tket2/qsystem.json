@@ -1,0 +1,332 @@
+{
+  "version": "0.2.0",
+  "name": "tket2.qsystem",
+  "runtime_reqs": [
+    "arithmetic.float.types",
+    "prelude",
+    "tket2.futures"
+  ],
+  "types": {},
+  "values": {},
+  "operations": {
+    "LazyMeasure": {
+      "extension": "tket2.qsystem",
+      "name": "LazyMeasure",
+      "description": "Lazily measure a qubit and lose it.",
+      "signature": {
+        "params": [],
+        "body": {
+          "input": [
+            {
+              "t": "Q"
+            }
+          ],
+          "output": [
+            {
+              "t": "Opaque",
+              "extension": "tket2.futures",
+              "id": "Future",
+              "args": [
+                {
+                  "tya": "Type",
+                  "ty": {
+                    "t": "Sum",
+                    "s": "Unit",
+                    "size": 2
+                  }
+                }
+              ],
+              "bound": "A"
+            }
+          ],
+          "runtime_reqs": []
+        }
+      },
+      "binary": false
+    },
+    "LazyMeasureReset": {
+      "extension": "tket2.qsystem",
+      "name": "LazyMeasureReset",
+      "description": "Lazily measure a qubit and reset it to the Z |0> eigenstate.",
+      "signature": {
+        "params": [],
+        "body": {
+          "input": [
+            {
+              "t": "Q"
+            }
+          ],
+          "output": [
+            {
+              "t": "Q"
+            },
+            {
+              "t": "Opaque",
+              "extension": "tket2.futures",
+              "id": "Future",
+              "args": [
+                {
+                  "tya": "Type",
+                  "ty": {
+                    "t": "Sum",
+                    "s": "Unit",
+                    "size": 2
+                  }
+                }
+              ],
+              "bound": "A"
+            }
+          ],
+          "runtime_reqs": []
+        }
+      },
+      "binary": false
+    },
+    "Measure": {
+      "extension": "tket2.qsystem",
+      "name": "Measure",
+      "description": "Measure a qubit and lose it.",
+      "signature": {
+        "params": [],
+        "body": {
+          "input": [
+            {
+              "t": "Q"
+            }
+          ],
+          "output": [
+            {
+              "t": "Sum",
+              "s": "Unit",
+              "size": 2
+            }
+          ],
+          "runtime_reqs": []
+        }
+      },
+      "binary": false
+    },
+    "MeasureReset": {
+      "extension": "tket2.qsystem",
+      "name": "MeasureReset",
+      "description": "Measure a qubit and reset it to the Z |0> eigenstate.",
+      "signature": {
+        "params": [],
+        "body": {
+          "input": [
+            {
+              "t": "Q"
+            }
+          ],
+          "output": [
+            {
+              "t": "Q"
+            },
+            {
+              "t": "Sum",
+              "s": "Unit",
+              "size": 2
+            }
+          ],
+          "runtime_reqs": []
+        }
+      },
+      "binary": false
+    },
+    "PhasedX": {
+      "extension": "tket2.qsystem",
+      "name": "PhasedX",
+      "description": "PhasedX gate.",
+      "signature": {
+        "params": [],
+        "body": {
+          "input": [
+            {
+              "t": "Q"
+            },
+            {
+              "t": "Opaque",
+              "extension": "arithmetic.float.types",
+              "id": "float64",
+              "args": [],
+              "bound": "C"
+            },
+            {
+              "t": "Opaque",
+              "extension": "arithmetic.float.types",
+              "id": "float64",
+              "args": [],
+              "bound": "C"
+            }
+          ],
+          "output": [
+            {
+              "t": "Q"
+            }
+          ],
+          "runtime_reqs": []
+        }
+      },
+      "binary": false
+    },
+    "QFree": {
+      "extension": "tket2.qsystem",
+      "name": "QFree",
+      "description": "Free a qubit (lose track of it).",
+      "signature": {
+        "params": [],
+        "body": {
+          "input": [
+            {
+              "t": "Q"
+            }
+          ],
+          "output": [],
+          "runtime_reqs": []
+        }
+      },
+      "binary": false
+    },
+    "Reset": {
+      "extension": "tket2.qsystem",
+      "name": "Reset",
+      "description": "Reset a qubit to the Z |0> eigenstate.",
+      "signature": {
+        "params": [],
+        "body": {
+          "input": [
+            {
+              "t": "Q"
+            }
+          ],
+          "output": [
+            {
+              "t": "Q"
+            }
+          ],
+          "runtime_reqs": []
+        }
+      },
+      "binary": false
+    },
+    "Rz": {
+      "extension": "tket2.qsystem",
+      "name": "Rz",
+      "description": "Rotate a qubit around the Z axis. Not physical.",
+      "signature": {
+        "params": [],
+        "body": {
+          "input": [
+            {
+              "t": "Q"
+            },
+            {
+              "t": "Opaque",
+              "extension": "arithmetic.float.types",
+              "id": "float64",
+              "args": [],
+              "bound": "C"
+            }
+          ],
+          "output": [
+            {
+              "t": "Q"
+            }
+          ],
+          "runtime_reqs": []
+        }
+      },
+      "binary": false
+    },
+    "TryQAlloc": {
+      "extension": "tket2.qsystem",
+      "name": "TryQAlloc",
+      "description": "Allocate a qubit in the Z |0> eigenstate.",
+      "signature": {
+        "params": [],
+        "body": {
+          "input": [],
+          "output": [
+            {
+              "t": "Sum",
+              "s": "General",
+              "rows": [
+                [],
+                [
+                  {
+                    "t": "Q"
+                  }
+                ]
+              ]
+            }
+          ],
+          "runtime_reqs": []
+        }
+      },
+      "binary": false
+    },
+    "ZZMax": {
+      "extension": "tket2.qsystem",
+      "name": "ZZMax",
+      "description": "Maximally entangling ZZ gate.",
+      "signature": {
+        "params": [],
+        "body": {
+          "input": [
+            {
+              "t": "Q"
+            },
+            {
+              "t": "Q"
+            }
+          ],
+          "output": [
+            {
+              "t": "Q"
+            },
+            {
+              "t": "Q"
+            }
+          ],
+          "runtime_reqs": []
+        }
+      },
+      "binary": false
+    },
+    "ZZPhase": {
+      "extension": "tket2.qsystem",
+      "name": "ZZPhase",
+      "description": "ZZ gate with an angle.",
+      "signature": {
+        "params": [],
+        "body": {
+          "input": [
+            {
+              "t": "Q"
+            },
+            {
+              "t": "Q"
+            },
+            {
+              "t": "Opaque",
+              "extension": "arithmetic.float.types",
+              "id": "float64",
+              "args": [],
+              "bound": "C"
+            }
+          ],
+          "output": [
+            {
+              "t": "Q"
+            },
+            {
+              "t": "Q"
+            }
+          ],
+          "runtime_reqs": []
+        }
+      },
+      "binary": false
+    }
+  }
+}

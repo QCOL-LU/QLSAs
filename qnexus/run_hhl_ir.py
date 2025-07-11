@@ -12,12 +12,10 @@ from Quantum_Linear_Solver import quantum_linear_solver
 
 def main(args):
     """Main execution function."""
-    qnx.login()
-    
-    # --- Print library versions ---
-    print("Qiskit version:", qiskit.__version__)
-    print("Qiskit Aer version:", qiskit_aer.__version__)
-    print("Pytket version:", pytket.__version__)
+    #qnx.login()
+
+    # project_ref = qnx.projects.get_or_create(name="HHL-IR")
+    # qnx.context.set_active_project(project_ref)
 
     # --- Problem Definition ---
     print(f"\n--- Generating {args.size}x{args.size} Problem ---")
