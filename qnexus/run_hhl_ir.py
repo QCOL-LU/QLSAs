@@ -43,7 +43,7 @@ def main(args):
         precision=1e-5, 
         max_iter=args.iterations, 
         backend=backend_name, 
-        plot=args.plot
+        plot=True
     )
     print("\nRefinement Complete.")
 
@@ -70,6 +70,8 @@ def main(args):
     print(f"Total Gates: {initial_solution['total_gates']}")
     print(f"Two-Qubit Gates: {initial_solution.get('two_qubit_gates')}")
     print(f"Total Iterations of IR: {refined_solution['total_iterations']}")
+    print(f"Runtime per iteration: {initial_solution.get('runtime')}")
+
 
     # Print comparison table for IR vs no IR
     print("\nComparison of IR vs No IR:")
@@ -87,6 +89,7 @@ def main(args):
         "Circuit Depth": initial_solution["circuit_depth"],
         "Total Gates": initial_solution["total_gates"],
         "Two-Qubit Gates": initial_solution.get("two_qubit_gates"),
+        "Iteration Runtime": initial_solution.get("runtime"),
         "||x_c - x_q|| without IR": before_error,
         "||x_c - x_q|| with IR": after_error,
         "||Ax - b|| without IR": before_residual,
@@ -113,7 +116,6 @@ if __name__ == '__main__':
     parser.add_argument('--backend', type=str, default='H1-1E', help='Quantinuum backend name (e.g., H1-1E).')
     parser.add_argument('--shots', type=int, default=1024, help='Number of shots per circuit execution.')
     parser.add_argument('--iterations', type=int, default=5, help='Max iterations for iterative refinement.')
-    parser.add_argument('--plot', action='store_true', help='Display plots of error and residual norms.')
     
     args = parser.parse_args()
     main(args)

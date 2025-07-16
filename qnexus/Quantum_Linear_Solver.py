@@ -10,27 +10,46 @@ from pytket.extensions.qiskit import qiskit_to_tk
 import qnexus as qnx
 import concurrent.futures
 import time
+from pytket.backends.status import StatusEnum
+import sys
 
-def robust_wait_for(job_ref, status_func, target_status="COMPLETED", timeout=None, poll_interval=5):
+def robust_wait_for(job_ref, status_func, timeout=None, poll_interval=5):
     """
     Polls the job status until it is COMPLETED or ERROR, or until timeout.
-    - job_ref: the job reference object
-    - status_func: a function that returns the job status (e.g., qnx.jobs.status)
-    - target_status: status string to wait for (default: 'COMPLETED')
-    - timeout: max seconds to wait (default: None for infinite)
-    - poll_interval: seconds between polls (default: 5)
-    Returns the final status.
+    Shows an entertaining spinner that updates frequently.
     """
+    # Fun Unicode spinner (totally optional)
+    spinner = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏']
+    spin_len = len(spinner)
+    spin_idx = 0
     start_time = time.time()
+    last_poll = time.time() - poll_interval  # so we poll immediately
+    print("Waiting for job to complete: ", end='', flush=True)
+    status = None
     while True:
-        status = status_func(job_ref)
-        print(f"Job status: {status}")
-        if str(status) == target_status or str(status) == "ERROR":
-            break
-        if timeout is not None and (time.time() - start_time > timeout):
-            print("Timeout waiting for job to complete.")
-            break
-        time.sleep(poll_interval)
+        now = time.time()
+        # Poll status only every poll_interval seconds
+        if now - last_poll >= poll_interval:
+            status = status_func(job_ref)
+            last_poll = now
+            # Check if status.status is StatusEnum.COMPLETED, ERROR, or CANCELLED
+            if hasattr(status, 'status'):
+                if status.status == StatusEnum.COMPLETED:
+                    print("\r" + " " * 40 + "\r", end='', flush=True)
+                    break
+                if status.status == StatusEnum.ERROR:
+                    print("\r" + " "*40 + "\rJob errored!                        ")
+                    break
+                if status.status == StatusEnum.CANCELLED:
+                    print("\r" + " "*40 + "\rJob cancelled!                      ")
+                    break
+            if timeout is not None and (now - start_time > timeout):
+                print("\r" + " "*40 + "\rTimeout waiting for job to complete.")
+                break
+        # Update spinner every 0.1s
+        print(f"\rWaiting for job to complete: {spinner[spin_idx % spin_len]}", end='', flush=True)
+        spin_idx += 1
+        time.sleep(0.1)
     return status
 
 def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None):
@@ -85,7 +104,7 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None)
         if not ref_compile_job:
             raise RuntimeError("Circuit compilation failed.")
         
-        robust_wait_for(ref_compile_job, qnx.jobs.status, target_status="COMPLETED", timeout=None, poll_interval=5)
+        robust_wait_for(ref_compile_job, qnx.jobs.status, timeout=None, poll_interval=5)
         ref_compiled_circuit = qnx.jobs.results(ref_compile_job)[0].get_output()
         print(f"Compilation successful. Compiled circuit ID: {ref_compiled_circuit.id}")
 
@@ -94,33 +113,33 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None)
         # full_compiled_circuit = qnx.circuits.get(id = compiled_ref.id)
         compiled_circuit = ref_compiled_circuit.download_circuit()
 
-        # Step 4: Correctly call the cost estimation function from the `jobs` module.
-        if backend_name == 'H1-1' or backend_name == 'H1-1E' or backend_name == 'H1-1LE':
-            syntax_checker = 'H1-1SC'
-        elif backend_name == 'H2-1' or backend_name == 'H2-1E' or backend_name == 'H2-1LE':
-            syntax_checker = 'H2-1SC'
-        else:
-            syntax_checker = None
+        # # Step 4: Correctly call the cost estimation function from the `jobs` module.
+        # if backend_name == 'H1-1' or backend_name == 'H1-1E' or backend_name == 'H1-1LE':
+        #     syntax_checker = 'H1-1SC'
+        # elif backend_name == 'H2-1' or backend_name == 'H2-1E' or backend_name == 'H2-1LE':
+        #     syntax_checker = 'H2-1SC'
+        # else:
+        #     syntax_checker = None
 
-        try:
-            # Use the compiled reference for cost estimation
-            def get_cost():
-                return qnx.circuits.cost(
-                    circuit_ref=ref_compiled_circuit, 
-                    n_shots=shots, 
-                    backend_config=config,
-                    syntax_checker=syntax_checker
-                )
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(get_cost)
-                try:
-                    solution['cost'] = future.result(timeout=30)  # 30 seconds
-                except concurrent.futures.TimeoutError:
-                    print('Cost estimation timed out.')
-                    solution['cost'] = 0
-        except Exception as e:
-            print(f"Cost estimation failed: {e}")
-            solution['cost'] = 0
+        # try:
+        #     # Use the compiled reference for cost estimation
+        #     def get_cost():
+        #         return qnx.circuits.cost(
+        #             circuit_ref=ref_compiled_circuit, 
+        #             n_shots=shots, 
+        #             backend_config=config,
+        #             syntax_checker=syntax_checker
+        #         )
+        #     with concurrent.futures.ThreadPoolExecutor() as executor:
+        #         future = executor.submit(get_cost)
+        #         try:
+        #             solution['cost'] = future.result(timeout=30)  # 30 seconds
+        #         except concurrent.futures.TimeoutError:
+        #             print('Cost estimation timed out.')
+        #             solution['cost'] = 0
+        # except Exception as e:
+        #     print(f"Cost estimation failed: {e}")
+        #     solution['cost'] = 0
 
         # Step 5: Access properties from the full_compiled_circuit object.
         solution['number_of_qubits'] = compiled_circuit.n_qubits
@@ -137,13 +156,23 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None)
             name=f"hhl-ir-execute-{len(b)}x{len(b)}-iter{iteration}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
         )
         
-        print("Waiting for results...")
-        robust_wait_for(ref_execute_job, qnx.jobs.status, target_status="COMPLETED", timeout=None, poll_interval=5)
+        final_status = robust_wait_for(ref_execute_job, qnx.jobs.status, timeout=None, poll_interval=5)
         ref_result = qnx.jobs.results(ref_execute_job)[0]
         print(f"Execution successful. Job ID: {ref_result.id}")
 
         result = ref_result.download_result()
-        solution['runtime'] = 'N/A with qnexus'
+        # Compute runtime as execution time (completed_time - running_time) if possible
+        if hasattr(final_status, 'running_time') and hasattr(final_status, 'completed_time'):
+            running = final_status.running_time
+            completed = final_status.completed_time
+            if running and completed:
+                runtime = (completed - running)
+                print(f"Execution job runtime: {runtime}")
+                solution['runtime'] = runtime
+            else:
+                solution['runtime'] = None
+        else:
+            solution['runtime'] = None
 
     elif isinstance(backend, AerSimulator):
         # Simulator logic remains unchanged

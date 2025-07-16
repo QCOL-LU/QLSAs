@@ -61,34 +61,34 @@ def IR(A, b, precision, max_iter, backend, plot=True):
         'initial_solution': initial_solution
     }
 
-    if plot:
-        backend_label = backend if isinstance(backend, str) else backend.name
-        iterations_range = np.arange(len(res_list))
-        size = len(b)
-        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-        data_dir = os.path.join(os.path.dirname(__file__), 'data')
-        os.makedirs(data_dir, exist_ok=True)
-        
-        plt.figure()
-        plt.plot(iterations_range, [np.log10(r) for r in res_list], 'o--', label=f'HHL with IR on {backend_label}')
-        plt.ylabel(r"$\log_{10}(\|Ax-b\|_2)$")
-        plt.xlabel("IR Iteration")
-        plt.legend()
-        plt.title("Residual Norm vs. Iteration")
-        plt.tight_layout()
-        residuals_filename = f"plot_residuals_{backend_label}_{size}x{size}_{timestamp}.png"
-        plt.savefig(os.path.join(data_dir, residuals_filename))
-        plt.show()
 
-        plt.figure()
-        plt.plot(iterations_range, [np.log10(e) for e in error_list], 'o--', label=f'HHL with IR on {backend_label}')
-        plt.ylabel(r"$\log_{10}(\|x-x_{\mathrm{classical}}\|_2)$")
-        plt.xlabel("IR Iteration")
-        plt.legend()
-        plt.title("Solution Error vs. Iteration")
-        plt.tight_layout()
-        errors_filename = f"plot_errors_{backend_label}_{size}x{size}_{timestamp}.png"
-        plt.savefig(os.path.join(data_dir, errors_filename))
-        plt.show()
+    backend_label = backend if isinstance(backend, str) else backend.name
+    iterations_range = np.arange(len(res_list))
+    size = len(b)
+    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    data_dir = os.path.join(os.path.dirname(__file__), 'data')
+    os.makedirs(data_dir, exist_ok=True)
+    
+    plt.figure()
+    plt.plot(iterations_range, [np.log10(r) for r in res_list], 'o--', label=f'HHL with IR on {backend_label}')
+    plt.ylabel(r"$\log_{10}(\|Ax-b\|_2)$")
+    plt.xlabel("IR Iteration")
+    plt.legend()
+    plt.title("Residual Norm vs. Iteration")
+    plt.tight_layout()
+    residuals_filename = f"plot_residuals_{backend_label}_{size}x{size}_{timestamp}.png"
+    plt.savefig(os.path.join(data_dir, residuals_filename))
+    plt.show()
+
+    plt.figure()
+    plt.plot(iterations_range, [np.log10(e) for e in error_list], 'o--', label=f'HHL with IR on {backend_label}')
+    plt.ylabel(r"$\log_{10}(\|x-x_{\mathrm{classical}}\|_2)$")
+    plt.xlabel("IR Iteration")
+    plt.legend()
+    plt.title("Solution Error vs. Iteration")
+    plt.tight_layout()
+    errors_filename = f"plot_errors_{backend_label}_{size}x{size}_{timestamp}.png"
+    plt.savefig(os.path.join(data_dir, errors_filename))
+    plt.show()
         
     return final_result
