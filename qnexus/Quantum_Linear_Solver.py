@@ -8,6 +8,30 @@ from qiskit import transpile
 from qiskit_aer import AerSimulator
 from pytket.extensions.qiskit import qiskit_to_tk
 import qnexus as qnx
+import concurrent.futures
+import time
+
+def robust_wait_for(job_ref, status_func, target_status="COMPLETED", timeout=None, poll_interval=5):
+    """
+    Polls the job status until it is COMPLETED or ERROR, or until timeout.
+    - job_ref: the job reference object
+    - status_func: a function that returns the job status (e.g., qnx.jobs.status)
+    - target_status: status string to wait for (default: 'COMPLETED')
+    - timeout: max seconds to wait (default: None for infinite)
+    - poll_interval: seconds between polls (default: 5)
+    Returns the final status.
+    """
+    start_time = time.time()
+    while True:
+        status = status_func(job_ref)
+        print(f"Job status: {status}")
+        if str(status) == target_status or str(status) == "ERROR":
+            break
+        if timeout is not None and (time.time() - start_time > timeout):
+            print("Timeout waiting for job to complete.")
+            break
+        time.sleep(poll_interval)
+    return status
 
 def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None):
     """
@@ -61,7 +85,7 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None)
         if not ref_compile_job:
             raise RuntimeError("Circuit compilation failed.")
         
-        qnx.jobs.wait_for(ref_compile_job)
+        robust_wait_for(ref_compile_job, qnx.jobs.status, target_status="COMPLETED", timeout=None, poll_interval=5)
         ref_compiled_circuit = qnx.jobs.results(ref_compile_job)[0].get_output()
         print(f"Compilation successful. Compiled circuit ID: {ref_compiled_circuit.id}")
 
@@ -71,21 +95,29 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None)
         compiled_circuit = ref_compiled_circuit.download_circuit()
 
         # Step 4: Correctly call the cost estimation function from the `jobs` module.
-        if backend_name == 'H1-1' or backend_name == 'H1-1E':
+        if backend_name == 'H1-1' or backend_name == 'H1-1E' or backend_name == 'H1-1LE':
             syntax_checker = 'H1-1SC'
-        elif backend_name == 'H2-1' or backend_name == 'H2-1E':
+        elif backend_name == 'H2-1' or backend_name == 'H2-1E' or backend_name == 'H2-1LE':
             syntax_checker = 'H2-1SC'
         else:
             syntax_checker = None
 
         try:
             # Use the compiled reference for cost estimation
-            solution['cost'] = qnx.circuits.cost(
-                circuit_ref=ref_compiled_circuit, 
-                n_shots=shots, 
-                backend_config=config,
-                syntax_checker=syntax_checker
-            )
+            def get_cost():
+                return qnx.circuits.cost(
+                    circuit_ref=ref_compiled_circuit, 
+                    n_shots=shots, 
+                    backend_config=config,
+                    syntax_checker=syntax_checker
+                )
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(get_cost)
+                try:
+                    solution['cost'] = future.result(timeout=30)  # 30 seconds
+                except concurrent.futures.TimeoutError:
+                    print('Cost estimation timed out.')
+                    solution['cost'] = 0
         except Exception as e:
             print(f"Cost estimation failed: {e}")
             solution['cost'] = 0
@@ -106,8 +138,8 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None)
         )
         
         print("Waiting for results...")
-        qnx.jobs.wait_for(ref_execute_job, timeout = None)
-        ref_result = qnx.jobs.results(ref_execute_job)[0] #.get_output() ?
+        robust_wait_for(ref_execute_job, qnx.jobs.status, target_status="COMPLETED", timeout=None, poll_interval=5)
+        ref_result = qnx.jobs.results(ref_execute_job)[0]
         print(f"Execution successful. Job ID: {ref_result.id}")
 
         result = ref_result.download_result()
