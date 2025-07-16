@@ -52,13 +52,22 @@ def robust_wait_for(job_ref, status_func, timeout=None, poll_interval=5):
         time.sleep(0.1)
     return status
 
-def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None):
+def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None, noisy=True):
     """
     Run the HHL circuit on a quantum backend and post-process the result.
     The backend can be a string for a Quantinuum device (e.g., 'H2-2') or an AerSimulator instance.
 
+    Args:
+        A: Matrix
+        b: Vector
+        backend: Backend name (str) or AerSimulator instance
+        t0: float, optional
+        shots: int, optional
+        iteration: int, optional
+        noisy: bool, optional. If True, enables noisy_simulation in QuantinuumConfig (default True)
+
     Returns:
-    The post-processed result of the quantum linear solver (x), and a dictionary of stats about the circuit and job.
+        The post-processed result of the quantum linear solver (x), and a dictionary of stats about the circuit and job.
     """
     csol = solve(A, b)
     solution = {}
@@ -92,7 +101,7 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None)
         print(f"Circuit uploaded with ID: {circuit_ref.id}")
 
         # Step 2: Compile the circuit using the reference. This returns a NEW CircuitRef to the COMPILED circuit.
-        config = qnx.QuantinuumConfig(device_name=backend_name, attempt_batching=True)
+        config = qnx.QuantinuumConfig(device_name=backend_name, attempt_batching=True, noisy_simulation=noisy)
         
         print("Compiling circuit...")
         ref_compile_job = qnx.start_compile_job(

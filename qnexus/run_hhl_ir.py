@@ -43,7 +43,7 @@ def main(args):
         precision=1e-5, 
         max_iter=args.iterations, 
         backend=backend_name, 
-        plot=True
+        noisy=args.noisy
     )
     print("\nRefinement Complete.")
 
@@ -116,6 +116,12 @@ if __name__ == '__main__':
     parser.add_argument('--backend', type=str, default='H1-1E', help='Quantinuum backend name (e.g., H1-1E).')
     parser.add_argument('--shots', type=int, default=1024, help='Number of shots per circuit execution.')
     parser.add_argument('--iterations', type=int, default=5, help='Max iterations for iterative refinement.')
-    
+
+    # Mutually exclusive group for noisy/noiseless
+    noise_group = parser.add_mutually_exclusive_group()
+    noise_group.add_argument('--noisy', dest='noisy', action='store_true', help='Enable noisy simulation (default).')
+    noise_group.add_argument('--noiseless', dest='noisy', action='store_false', help='Disable noisy simulation.')
+    parser.set_defaults(noisy=True)
+
     args = parser.parse_args()
     main(args)

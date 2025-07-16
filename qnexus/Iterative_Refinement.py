@@ -14,7 +14,19 @@ def norm_estimation(A, b, x):
         return 1e-5
     return np.dot(v, b) / denominator
 
-def IR(A, b, precision, max_iter, backend, plot=True):
+def IR(A, b, precision, max_iter, backend, noisy=True):
+    """
+    Iterative Refinement for quantum linear solver.
+    Args:
+        A: Matrix
+        b: Vector
+        precision: float
+        max_iter: int
+        backend: Backend name or AerSimulator
+        noisy: bool, optional. If True, enables noisy simulation (default True)
+    Returns:
+        dict with refined solution, residuals, errors, etc.
+    """
     nabla, rho, d = 1, 2, len(A)
     iteration = 0
     x = np.zeros(d)
@@ -22,7 +34,7 @@ def IR(A, b, precision, max_iter, backend, plot=True):
     res_list, error_list = [], []
 
     print("IR: Obtaining initial solution...")
-    initial_solution = quantum_linear_solver(A, b, backend=backend, shots=1024, iteration=0)
+    initial_solution = quantum_linear_solver(A, b, backend=backend, shots=1024, iteration=0, noisy=noisy)
     x = initial_solution['x']
     r = b - np.dot(A, x)
     error_list.append(norm(csol - x))
@@ -33,7 +45,7 @@ def IR(A, b, precision, max_iter, backend, plot=True):
     while (norm(r) > precision and iteration <= max_iter):
         print(f"IR Iteration: {iteration}")
         new_r = nabla * r
-        result = quantum_linear_solver(A, new_r, backend=backend, shots=1024, iteration=iteration)
+        result = quantum_linear_solver(A, new_r, backend=backend, shots=1024, iteration=iteration, noisy=noisy)
         c = result['x']
         alpha = norm_estimation(A, new_r, c)
         x += (alpha / nabla) * c
