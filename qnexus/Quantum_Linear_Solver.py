@@ -52,7 +52,7 @@ def robust_wait_for(job_ref, status_func, timeout=None, poll_interval=5):
         time.sleep(0.1)
     return status
 
-def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None, noisy=True):
+def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None, noisy=True, n_qpe_qubits=None):
     """
     Run the HHL circuit on a quantum backend and post-process the result.
     The backend can be a string for a Quantinuum device (e.g., 'H2-2') or an AerSimulator instance.
@@ -65,6 +65,7 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None,
         shots: int, optional
         iteration: int, optional
         noisy: bool, optional. If True, enables noisy_simulation in QuantinuumConfig (default True)
+        n_qpe_qubits: int, optional. Number of QPE qubits. 
 
     Returns:
         The post-processed result of the quantum linear solver (x), and a dictionary of stats about the circuit and job.
@@ -72,7 +73,7 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None,
     csol = solve(A, b)
     solution = {}
 
-    hhl_circ = hhl_circuit(A, b, t0)
+    hhl_circ = hhl_circuit(A, b, t0, n_qpe_qubits=n_qpe_qubits)
     qiskit_circuit = transpile(hhl_circ, AerSimulator())
     pytket_circuit = qiskit_to_tk(qiskit_circuit)
     
@@ -101,14 +102,25 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None,
         print(f"Circuit uploaded with ID: {circuit_ref.id}")
 
         # Step 2: Compile the circuit using the reference. This returns a NEW CircuitRef to the COMPILED circuit.
-        config = qnx.QuantinuumConfig(device_name=backend_name, attempt_batching=True, noisy_simulation=noisy)
+        emulators = {"H1-1E", "H2-1E", "H2-2E"}
+        if backend_name in emulators:
+            config = qnx.QuantinuumConfig(device_name=backend_name, 
+                                          attempt_batching=True, 
+                                          no_opt=False, 
+                                          simplify_initial=True,
+                                          noisy_simulation=noisy)
+        else:
+            config = qnx.QuantinuumConfig(device_name=backend_name, 
+                                          attempt_batching=True, 
+                                          no_opt=False, 
+                                          simplify_initial=True)
         
         print("Compiling circuit...")
         ref_compile_job = qnx.start_compile_job(
-            circuits =[circuit_ref],  # Must be a list of references
+            programs =[circuit_ref],  # Must be a list of references
             backend_config=config,
             optimisation_level=2,
-            name=f"hhl-ir-compile-{len(b)}x{len(b)}-iter{iteration}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+            name=f"hhl-ir-compile-{len(b)}x{len(b)}-iter{iteration}-qpeq{n_qpe_qubits}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
         )
         if not ref_compile_job:
             raise RuntimeError("Circuit compilation failed.")
@@ -159,10 +171,10 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None,
         # Step 6: Execute the circuit
         print("Executing job...")
         ref_execute_job = qnx.start_execute_job(
-            circuits =[ref_compiled_circuit],  # Must be a list of references
+            programs =[ref_compiled_circuit],  # Must be a list of references
             n_shots=[shots],
             backend_config=config,
-            name=f"hhl-ir-execute-{len(b)}x{len(b)}-iter{iteration}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+            name=f"hhl-ir-execute-{len(b)}x{len(b)}-iter{iteration}-qpeq{n_qpe_qubits}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
         )
         
         final_status = robust_wait_for(ref_execute_job, qnx.jobs.status, timeout=None, poll_interval=5)

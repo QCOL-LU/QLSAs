@@ -14,7 +14,7 @@ def norm_estimation(A, b, x):
         return 1e-5
     return np.dot(v, b) / denominator
 
-def IR(A, b, precision, max_iter, backend, noisy=True):
+def IR(A, b, precision, max_iter, backend, noisy=True, n_qpe_qubits=None):
     """
     Iterative Refinement for quantum linear solver.
     Args:
@@ -24,6 +24,7 @@ def IR(A, b, precision, max_iter, backend, noisy=True):
         max_iter: int
         backend: Backend name or AerSimulator
         noisy: bool, optional. If True, enables noisy simulation (default True)
+        n_qpe_qubits: int, optional. Number of QPE qubits.
     Returns:
         dict with refined solution, residuals, errors, etc.
     """
@@ -34,7 +35,7 @@ def IR(A, b, precision, max_iter, backend, noisy=True):
     res_list, error_list = [], []
 
     print("IR: Obtaining initial solution...")
-    initial_solution = quantum_linear_solver(A, b, backend=backend, shots=1024, iteration=0, noisy=noisy)
+    initial_solution = quantum_linear_solver(A, b, backend=backend, shots=1024, iteration=0, noisy=noisy, n_qpe_qubits=n_qpe_qubits)
     x = initial_solution['x']
     r = b - np.dot(A, x)
     error_list.append(norm(csol - x))
@@ -45,7 +46,7 @@ def IR(A, b, precision, max_iter, backend, noisy=True):
     while (norm(r) > precision and iteration <= max_iter):
         print(f"IR Iteration: {iteration}")
         new_r = nabla * r
-        result = quantum_linear_solver(A, new_r, backend=backend, shots=1024, iteration=iteration, noisy=noisy)
+        result = quantum_linear_solver(A, new_r, backend=backend, shots=1024, iteration=iteration, noisy=noisy, n_qpe_qubits=n_qpe_qubits)
         c = result['x']
         alpha = norm_estimation(A, new_r, c)
         x += (alpha / nabla) * c
@@ -82,25 +83,25 @@ def IR(A, b, precision, max_iter, backend, noisy=True):
     os.makedirs(data_dir, exist_ok=True)
     
     plt.figure()
-    plt.plot(iterations_range, [np.log10(r) for r in res_list], 'o--', label=f'HHL with IR on {backend_label}')
+    plt.plot(iterations_range, [np.log10(r) for r in res_list], 'o--', label=f'{size}x{size} on {backend_label}')
     plt.ylabel(r"$\log_{10}(\|Ax-b\|_2)$")
     plt.xlabel("IR Iteration")
     plt.legend()
     plt.title("Residual Norm vs. Iteration")
     plt.tight_layout()
-    residuals_filename = f"plot_residuals_{backend_label}_{size}x{size}_{timestamp}.png"
+    residuals_filename = f"plot_residuals_{backend_label}_{size}x{size}_qpe{n_qpe_qubits}_{timestamp}.png"
     plt.savefig(os.path.join(data_dir, residuals_filename))
-    plt.show()
+    #plt.show()
 
     plt.figure()
-    plt.plot(iterations_range, [np.log10(e) for e in error_list], 'o--', label=f'HHL with IR on {backend_label}')
+    plt.plot(iterations_range, [np.log10(e) for e in error_list], 'o--', label=f'{size}x{size} on {backend_label}')
     plt.ylabel(r"$\log_{10}(\|x-x_{\mathrm{classical}}\|_2)$")
     plt.xlabel("IR Iteration")
     plt.legend()
     plt.title("Solution Error vs. Iteration")
     plt.tight_layout()
-    errors_filename = f"plot_errors_{backend_label}_{size}x{size}_{timestamp}.png"
+    errors_filename = f"plot_errors_{backend_label}_{size}x{size}_qpe{n_qpe_qubits}_{timestamp}.png"
     plt.savefig(os.path.join(data_dir, errors_filename))
-    plt.show()
+    #plt.show()
         
     return final_result
