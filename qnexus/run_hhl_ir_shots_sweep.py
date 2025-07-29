@@ -8,6 +8,7 @@ from run_hhl_ir import run_hhl_ir
 # Settings
 size = 8
 backend = 'H1-1E'
+noisy = False
 iterations = 10
 shots_list = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
 data_dir = os.path.join(os.path.dirname(__file__), 'data', 'shots_sweep')
@@ -19,12 +20,15 @@ errors_matrix = np.zeros((len(shots_list), iterations))
 
 def run_single_shots(shots):
     print(f"===================Running size {size} for shots = {shots}===================")
+    emulators = {"H1-1E", "H2-1E", "H2-2E"}
+    if backend in emulators:
+        print(f"Noisy: {noisy}")
     result = run_hhl_ir(
         size=size,
         backend=backend,
         shots=shots,
         iterations=iterations,
-        noisy=False
+        noisy=noisy
     )
     residuals = np.array(result['residuals'])
     errors = np.array(result['errors'])

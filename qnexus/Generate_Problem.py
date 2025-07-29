@@ -33,6 +33,11 @@ def generate_problem(n, cond_number=5, sparsity=0.5, seed=None):
     """
     if seed is not None:
         np.random.seed(seed)
+    
+    # Validate that n is a power of 2 (required for HHL algorithm)
+    if not (n > 0 and (n & (n - 1)) == 0):
+        raise ValueError(f"Problem size n={n} must be a power of 2 for the HHL algorithm")
+    
     # Generate a random vector b
     b = np.random.randn(n).round(2)
     # Step 1: Construct desired eigenvalues to achieve the target condition number.

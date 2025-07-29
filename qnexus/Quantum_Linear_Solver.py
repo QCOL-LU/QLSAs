@@ -11,17 +11,13 @@ import qnexus as qnx
 import concurrent.futures
 import time
 from pytket.backends.status import StatusEnum
+import pytket.backends.status
 import sys
 
 def robust_wait_for(job_ref, status_func, timeout=None, poll_interval=5):
     """
     Polls the job status until it is COMPLETED or ERROR, or until timeout.
-    Shows an entertaining spinner that updates frequently.
     """
-    # Fun Unicode spinner (totally optional)
-    spinner = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏']
-    spin_len = len(spinner)
-    spin_idx = 0
     start_time = time.time()
     last_poll = time.time() - poll_interval  # so we poll immediately
     print("Waiting for job to complete: ", end='', flush=True)
@@ -31,28 +27,36 @@ def robust_wait_for(job_ref, status_func, timeout=None, poll_interval=5):
         # Poll status only every poll_interval seconds
         if now - last_poll >= poll_interval:
             status = status_func(job_ref)
+            # Clear the previous status and print the new one
+            print(f"\rWaiting for job to complete: {status.status}", end='', flush=True)
             last_poll = now
             # Check if status.status is StatusEnum.COMPLETED, ERROR, or CANCELLED
             if hasattr(status, 'status'):
-                if status.status == StatusEnum.COMPLETED:
-                    print("\r" + " " * 40 + "\r", end='', flush=True)
+                # Check for both enum and string values
+                status_str = str(status.status)
+                if (status.status == StatusEnum.COMPLETED or 
+                    status_str == "COMPLETED" or 
+                    status_str == "JobStatusEnum.COMPLETED"):
+                    print("\r" + " " * 60 + "\r", end='', flush=True)
+                    print("Job completed successfully!")
                     break
-                if status.status == StatusEnum.ERROR:
-                    print("\r" + " "*40 + "\rJob errored!                        ")
+                if (status.status == StatusEnum.ERROR or 
+                    status_str == "ERROR" or 
+                    status_str == "JobStatusEnum.ERROR"):
+                    print("\r" + " "*60 + "\rJob errored!")
                     break
-                if status.status == StatusEnum.CANCELLED:
-                    print("\r" + " "*40 + "\rJob cancelled!                      ")
+                if (status.status == StatusEnum.CANCELLED or 
+                    status_str == "CANCELLED" or 
+                    status_str == "JobStatusEnum.CANCELLED"):
+                    print("\r" + " "*60 + "\rJob cancelled!")
                     break
             if timeout is not None and (now - start_time > timeout):
-                print("\r" + " "*40 + "\rTimeout waiting for job to complete.")
+                print("\r" + " "*60 + "\rTimeout waiting for job to complete.")
                 break
-        # Update spinner every 0.1s
-        print(f"\rWaiting for job to complete: {spinner[spin_idx % spin_len]}", end='', flush=True)
-        spin_idx += 1
         time.sleep(0.1)
     return status
 
-def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None, noisy=True, n_qpe_qubits=None):
+def quantum_linear_solver(A, b, backend, n_qpe_qubits, t0=2*np.pi, shots=1024, iteration=None, noisy=True):
     """
     Run the HHL circuit on a quantum backend and post-process the result.
     The backend can be a string for a Quantinuum device (e.g., 'H2-2') or an AerSimulator instance.
@@ -65,15 +69,14 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None,
         shots: int, optional
         iteration: int, optional
         noisy: bool, optional. If True, enables noisy_simulation in QuantinuumConfig (default True)
-        n_qpe_qubits: int, optional. Number of QPE qubits. 
+        n_qpe_qubits: int. Number of QPE qubits. 
 
     Returns:
         The post-processed result of the quantum linear solver (x), and a dictionary of stats about the circuit and job.
     """
     csol = solve(A, b)
     solution = {}
-
-    hhl_circ = hhl_circuit(A, b, t0, n_qpe_qubits=n_qpe_qubits)
+    hhl_circ = hhl_circuit(A, b, n_qpe_qubits, t0)
     qiskit_circuit = transpile(hhl_circ, AerSimulator())
     pytket_circuit = qiskit_to_tk(qiskit_circuit)
     
@@ -126,6 +129,7 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None,
             raise RuntimeError("Circuit compilation failed.")
         
         robust_wait_for(ref_compile_job, qnx.jobs.status, timeout=None, poll_interval=5)
+        #qnx.jobs.wait_for(ref_compile_job, timeout=None)
         ref_compiled_circuit = qnx.jobs.results(ref_compile_job)[0].get_output()
         print(f"Compilation successful. Compiled circuit ID: {ref_compiled_circuit.id}")
 
@@ -170,14 +174,24 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None,
 
         # Step 6: Execute the circuit
         print("Executing job...")
-        ref_execute_job = qnx.start_execute_job(
-            programs =[ref_compiled_circuit],  # Must be a list of references
-            n_shots=[shots],
-            backend_config=config,
-            name=f"hhl-ir-execute-{len(b)}x{len(b)}-iter{iteration}-qpeq{n_qpe_qubits}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        )
+        if backend_name in emulators:
+            ref_execute_job = qnx.start_execute_job(
+                programs =[ref_compiled_circuit],  # Must be a list of references
+                n_shots=[shots],
+                backend_config=config,
+                noisy_simulator=noisy,
+                name=f"hhl-ir-execute-{len(b)}x{len(b)}-iter{iteration}-qpeq{n_qpe_qubits}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+            )
+        else:
+            ref_execute_job = qnx.start_execute_job(
+                programs =[ref_compiled_circuit],  # Must be a list of references
+                n_shots=[shots],
+                backend_config=config,
+                name=f"hhl-ir-execute-{len(b)}x{len(b)}-iter{iteration}-qpeq{n_qpe_qubits}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+            )
         
-        final_status = robust_wait_for(ref_execute_job, qnx.jobs.status, timeout=None, poll_interval=5)
+        final_status = robust_wait_for(ref_execute_job, qnx.jobs.status, timeout=None, poll_interval=1)
+        #final_status = qnx.jobs.wait_for(ref_execute_job, timeout=None)
         ref_result = qnx.jobs.results(ref_execute_job)[0]
         print(f"Execution successful. Job ID: {ref_result.id}")
 
@@ -221,9 +235,15 @@ def quantum_linear_solver(A, b, backend, t0=2*np.pi, shots=1024, iteration=None,
             key_str = "".join(map(str, key)) if is_hardware else key
             if key_str[-1] == '1':
                 num += value
-                binary_str = key_str[:-1] if is_hardware else key_str.split(' ')[1]
-                cord = int(binary_str, 2)
-                app_sol[cord] = value
+                try:
+                    binary_str = key_str[:-1] if is_hardware else key_str.split(' ')[1]
+                    cord = int(binary_str, 2)
+                    if 0 <= cord < len(app_sol):
+                        app_sol[cord] = value
+                except (ValueError, IndexError) as e:
+                    # Skip invalid measurement results
+                    print(f"Warning: Skipping invalid measurement result: {key_str}")
+                    continue
         
         if num == 0: return app_sol
         app_sol = np.sqrt(app_sol / num)

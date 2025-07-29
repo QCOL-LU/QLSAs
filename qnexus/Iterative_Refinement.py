@@ -11,10 +11,13 @@ def norm_estimation(A, b, x):
     v = A @ x
     denominator = np.dot(v, v)
     if denominator == 0:
-        return 1e-5
+        # If denominator is zero, the vector x is in the null space of A
+        # This indicates a degenerate case. Return a small value to continue iteration.
+        # In practice, this might indicate the system is ill-conditioned.
+        return 1e-10  # Use a smaller value for better numerical stability
     return np.dot(v, b) / denominator
 
-def IR(A, b, precision, max_iter, backend, noisy=True, n_qpe_qubits=None):
+def IR(A, b, precision, max_iter, backend, n_qpe_qubits, shots=1024, noisy=True):
     """
     Iterative Refinement for quantum linear solver.
     Args:
@@ -24,7 +27,7 @@ def IR(A, b, precision, max_iter, backend, noisy=True, n_qpe_qubits=None):
         max_iter: int
         backend: Backend name or AerSimulator
         noisy: bool, optional. If True, enables noisy simulation (default True)
-        n_qpe_qubits: int, optional. Number of QPE qubits.
+        n_qpe_qubits: int. Number of QPE qubits.
     Returns:
         dict with refined solution, residuals, errors, etc.
     """
@@ -35,7 +38,7 @@ def IR(A, b, precision, max_iter, backend, noisy=True, n_qpe_qubits=None):
     res_list, error_list = [], []
 
     print("IR: Obtaining initial solution...")
-    initial_solution = quantum_linear_solver(A, b, backend=backend, shots=1024, iteration=0, noisy=noisy, n_qpe_qubits=n_qpe_qubits)
+    initial_solution = quantum_linear_solver(A, b, backend=backend, shots=shots, iteration=0, noisy=noisy, n_qpe_qubits=n_qpe_qubits)
     x = initial_solution['x']
     r = b - np.dot(A, x)
     error_list.append(norm(csol - x))
@@ -46,7 +49,7 @@ def IR(A, b, precision, max_iter, backend, noisy=True, n_qpe_qubits=None):
     while (norm(r) > precision and iteration <= max_iter):
         print(f"IR Iteration: {iteration}")
         new_r = nabla * r
-        result = quantum_linear_solver(A, new_r, backend=backend, shots=1024, iteration=iteration, noisy=noisy, n_qpe_qubits=n_qpe_qubits)
+        result = quantum_linear_solver(A, new_r, backend=backend, shots=shots, iteration=iteration, noisy=noisy, n_qpe_qubits=n_qpe_qubits)
         c = result['x']
         alpha = norm_estimation(A, new_r, c)
         x += (alpha / nabla) * c
