@@ -1,130 +1,295 @@
 # HHL with Iterative Refinement on Quantinuum using QNexus
 
-This project implements the HHL algorithm combined with Scaled Iterative Refinement to solve linear systems of equations on Quantinuum's H-Series quantum computers via the `qnexus` library.
+This project implements the **HHL (Harrow-Hassidim-Lloyd) algorithm** combined with **Scaled Iterative Refinement** to solve linear systems of equations on Quantinuum's H-Series quantum computers via the `qnexus` library.
 
-## Setup
+## 🎯 Overview
 
-1.  **Install Dependencies:** Make sure all required packages are installed.
-    ```bash
-    pip install -r requirements.txt
-    ```
+The HHL algorithm is a quantum algorithm for solving linear systems of equations. This implementation enhances the basic HHL algorithm with iterative refinement to improve solution accuracy and handle quantum noise effects.
 
-2.  **Login to Quantinuum:** Authenticate your session to be able to submit jobs to the hardware.
-    ```bash
-    qnx login
-    ```
+### Key Features
+- **Quantum Linear Solver**: Implements the HHL algorithm for solving Ax = b
+- **Iterative Refinement**: Improves solution accuracy through classical post-processing
+- **Quantinuum Integration**: Runs on H-Series quantum computers via qnexus
+- **Parameter Sweeps**: Automated exploration of QPE qubits and shot counts
+- **Comprehensive Analysis**: Detailed error and residual tracking
+- **Visualization**: Automatic generation of convergence plots
 
-## Running Experiments
+## 📋 Prerequisites
 
-All experiments are run from the `run_hhl_ir.py` script. You can specify the problem size, backend, and other parameters from the command line.
+- Python 3.8+
+- Quantinuum account with access to H-Series devices
+- qnexus library access
+
+## 🚀 Installation
+
+### 1. Clone the Repository
+```bash
+git clone <repository-url>
+cd qnexus
+```
+
+### 2. Create Virtual Environment
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+### 3. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Authenticate with Quantinuum
+```bash
+qnx login
+```
+
+## 📦 Dependencies
+
+The project requires the following packages:
+- `numpy==1.26.4` - Numerical computations
+- `pandas==2.2.3` - Data analysis and CSV handling
+- `matplotlib==3.9.2` - Plotting and visualization
+- `qiskit==1.2.2` - Quantum circuit construction
+- `qiskit-aer==0.15.1` - Quantum simulation
+- `pytket==1.39.0` - Circuit compilation and optimization
+- `pytket-qiskit==0.56.0` - Qiskit to pytket conversion
+- `qnexus` - Quantinuum cloud access
+
+## 🏗️ Project Structure
+
+```
+qnexus/
+├── README.md                           # This file
+├── requirements.txt                     # Python dependencies
+├── run_hhl_ir.py                      # Main execution script
+├── run_hhl_ir_qpe_sweep.py            # QPE qubits parameter sweep
+├── run_hhl_ir_shots_sweep.py          # Shots parameter sweep
+├── plot_compare.py                     # Compare multiple results
+├── Quantum_Linear_Solver.py            # Core quantum solver
+├── Iterative_Refinement.py             # IR implementation
+├── HHL_Circuit.py                      # HHL circuit construction
+├── Generate_Problem.py                 # Problem generation
+├── HHL_Circuit_Old.py                 # Legacy circuit implementation
+├── data/                               # Results and plots
+│   ├── qpe_sweep/                     # QPE sweep results
+│   ├── shots_sweep/                   # Shots sweep results
+│   └── *.csv, *.png                   # Individual run results
+└── venv/                              # Virtual environment
+```
+
+## 🎮 Usage
 
 ### Basic Usage
 
-To run the 2x2 problem on the H2-2 machine:
+Run a simple 2x2 problem:
 ```bash
 python run_hhl_ir.py --size 2
 ```
 
-To run the 4x4 problem on the H2-2 machine:
-```bash
-python run_hhl_ir.py --size 4
-```
-
-### Command-Line Arguments
-
-You can see all available options by running:
-```bash
-python run_hhl_ir.py --help
-```
-
-**Key Arguments:**
-*   `--size`: The size of the linear system (e.g., `2` for 2x2, `4` for 4x4). Default: `2`.
-*   `--backend`: The Quantinuum backend name (e.g., `H2-2`, `H1-1E`). Default: `H1-1E`.
-*   `--shots`: The number of shots for each quantum circuit execution. Default: `1024`.
-*   `--iterations`: The maximum number of iterations for the iterative refinement. Default: `5`.
-*   `--noisy` / `--noiseless`: Control whether to use noisy simulation (default is noisy). Use `--noiseless` to disable noise.
-
-### Example with More Options
-
-Run a 4x4 problem on the `H1-1E` backend for 3 iterations with noiseless simulation:
+Run a 4x4 problem with custom parameters:
 ```bash
 python run_hhl_ir.py --size 4 --backend H1-1E --iterations 3 --noiseless
 ```
 
-### Output
+### Command-Line Arguments
 
-The script will:
-1.  Print live progress to the console, including job submission status and iteration results.
-2.  Generate a `.csv` file with the summary of the results (e.g., `results_H1-1E_4x4_<timestamp>.csv`) in the `data/` folder.
+| Argument | Type | Default | Description |
+|----------|------|---------|-------------|
+| `--size` | int | 2 | Problem size (must be power of 2) |
+| `--backend` | str | H1-1E | Quantinuum backend name |
+| `--shots` | int | 1024 | Number of shots per circuit |
+| `--iterations` | int | 5 | Max IR iterations |
+| `--qpe-qubits` | int | None | QPE qubits (default: log₂(size)) |
+| `--noisy` | flag | True | Enable noisy simulation |
+| `--noiseless` | flag | False | Disable noisy simulation |
+
+### Available Backends
+
+**Emulators (for testing):**
+- `H1-1E` - H1-1 Emulator
+- `H2-1E` - H2-1 Emulator  
+- `H2-2E` - H2-2 Emulator
+
+**Hardware (requires access):**
+- `H1-1` - H1-1 Quantum Computer
+- `H2-1` - H2-1 Quantum Computer
+- `H2-2` - H2-2 Quantum Computer
+
+### Parameter Sweeps
+
+**QPE Qubits Sweep:**
+```bash
+python run_hhl_ir_qpe_sweep.py
+```
+Sweeps QPE qubits from 1 to 7 for 2x2 problems.
+
+**Shots Sweep:**
+```bash
+python run_hhl_ir_shots_sweep.py
+```
+Sweeps shots from 2 to 1024 for 8x8 problems.
+
+### Comparing Results
+
+Compare multiple CSV files:
+```bash
+python plot_compare.py results_H1-1E_2x2_*.csv
+```
+
+## 🔬 Algorithm Details
+
+### HHL Algorithm
+The HHL algorithm solves linear systems Ax = b using quantum computing:
+
+1. **State Preparation**: Encode vector b into quantum state
+2. **Quantum Phase Estimation**: Estimate eigenvalues of A
+3. **Eigenvalue Inversion**: Apply controlled rotations based on eigenvalues
+4. **Measurement**: Extract solution vector x
+
+### Iterative Refinement
+Classical post-processing to improve quantum solution accuracy:
+
+1. **Initial Solution**: Get approximate solution x₀ from HHL
+2. **Residual Calculation**: Compute r = b - Ax₀
+3. **Correction**: Solve Aδx = r using HHL
+4. **Update**: x₁ = x₀ + δx
+5. **Iterate**: Repeat until convergence
+
+### Problem Generation
+Generates Hermitian matrices with specified:
+- **Condition Number**: Controls eigenvalue spread
+- **Sparsity**: Fraction of non-zero off-diagonal elements
+- **Size**: Must be power of 2 for HHL algorithm
+
+## 📊 Output and Results
+
+### Console Output
+Real-time progress including:
+- Problem details (condition number, sparsity)
+- Job submission and compilation status
+- Iteration progress with residuals and errors
+- Final results summary
+
+### Generated Files
+
+**CSV Results:**
+- `results_{backend}_{size}x{size}_{timestamp}.csv`
+- Contains summary statistics and iteration data
+
+**Plots:**
+- `plot_residuals_{backend}_{size}x{size}_{timestamp}.png`
+- `plot_errors_{backend}_{size}x{size}_{timestamp}.png`
+- Show convergence of residuals and errors
+
+**Sweep Results:**
+- `qpe_sweep/` - QPE qubits parameter exploration
+- `shots_sweep/` - Shot count parameter exploration
+- Contains matrices and heatmaps
+
+### Metrics Tracked
+
+| Metric | Description |
+|--------|-------------|
+| `||x_c - x_q||` | Error between classical and quantum solutions |
+| `||Ax - b||` | Residual norm |
+| `Circuit Depth` | Number of circuit layers |
+| `Total Gates` | Total number of quantum gates |
+| `Two-Qubit Gates` | Number of two-qubit operations |
+| `Runtime` | Execution time per iteration |
+
+## 🔧 Configuration
+
+### Environment Variables
+- `QNEXUS_API_KEY` - Quantinuum API key (if not using qnx login)
+
+### Backend Configuration
+The code automatically configures backends:
+- **Emulators**: Enable noisy simulation by default
+- **Hardware**: Use standard compilation settings
+- **Optimization**: Level 2 optimization for all backends
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+**1. Authentication Errors**
+```bash
+qnx login
+# Follow prompts to authenticate
+```
+
+**2. Backend Not Available**
+- Check backend name spelling
+- Verify account has access to requested backend
+- Try emulator backends for testing
+
+**3. Memory Issues**
+- Reduce problem size for large systems
+- Use fewer shots for initial testing
+- Monitor system memory usage
+
+**4. Job Timeouts**
+- Increase timeout in `robust_wait_for` function
+- Check backend queue status
+- Try different backend if available
+
+**5. Import Errors**
+```bash
+pip install -r requirements.txt
+source venv/bin/activate
+```
+
+### Debug Mode
+Add debug prints to `Quantum_Linear_Solver.py`:
+```python
+# In robust_wait_for function
+print(f"DEBUG: Status = {status.status}")
+```
+
+## 📈 Performance Tips
+
+1. **Start Small**: Begin with 2x2 problems to verify setup
+2. **Use Emulators**: Test with H1-1E before hardware
+3. **Monitor Convergence**: Check residual plots for proper convergence
+4. **Parameter Tuning**: Experiment with QPE qubits and shots
+5. **Batch Processing**: Use sweep scripts for systematic exploration
+
+## 🔬 Research Applications
+
+This implementation is suitable for:
+- **Quantum Algorithm Research**: HHL algorithm studies
+- **Noise Mitigation**: Iterative refinement techniques
+- **Parameter Optimization**: QPE qubits and shot count studies
+- **Benchmarking**: Quantum vs classical performance comparison
+- **Educational**: Learning quantum linear algebra
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📄 License
+
+[Add license information here]
+
+## 🙏 Acknowledgments
+
+- Quantinuum for providing quantum computing access
+- Qiskit team for quantum circuit framework
+- pytket team for circuit compilation tools
+
+## 📞 Support
+
+For issues and questions:
+1. Check this README and troubleshooting section
+2. Review console output for error messages
+3. Check Quantinuum backend status
+4. Contact maintainers with detailed error information
 
 ---
 
-## Example Output
-
-Below is a sample of the console output you might see when running a larger problem (e.g., 8x8 system, 10 IR iterations):
-
-```
---- Generating 8x8 Problem ---
-Problem Details:
-  Condition Number: 2.2326
-  Sparsity: 0.7500
-
-Target backend: H1-1E
-
---- Running HHL with Iterative Refinement ---
-IR: Obtaining initial solution...
-Running on H1-1E via qnexus
-Uploading circuit 'hhl-circuit-8x8-20250716-023755-iter0'...
-Circuit uploaded with ID: ea9fb8f9-63a3-4b14-b0aa-64518bdef1f4
-Compiling circuit...
-Compilation successful. Compiled circuit ID: 1b14d2a1-9e31-4b7c-9775-52effe35142d
-Executing job...
-Waiting for results...
-Execution successful. Job ID: 60831a04-ccdb-486a-8ff6-cd388af80438
-Initial residual: 0.1698, Initial error: 0.5548
-
-IR Iteration: 1
-Running on H1-1E via qnexus
-Uploading circuit 'hhl-circuit-8x8-20250716-024811-iter1'...
-... (output truncated for brevity) ...
-IR Iteration: 10
-Running on H1-1E via qnexus
-Uploading circuit 'hhl-circuit-8x8-20250716-040139-iter10'...
-Compiling circuit...
-Compilation successful. Compiled circuit ID: cfe8d25b-5461-47a1-b285-a8e54174c464
-Executing job...
-Waiting for results...
-Execution successful. Job ID: 019acbbb-0d22-41d2-adc3-a3cfef9e3425
-Execution job runtime: 0:00:22.694631
-  residual: 0.0088, error: 0.0313, alpha: 0.7623
-
-
-Refinement Complete.
-
---- Results Summary ---
-Backend: H1-1E
-Problem Size: 8 x 8
-Condition Number: 2.232571
-Sparsity: 0.750000
-Number of Qubits: 7
-Circuit Depth: 1287
-Total Gates: 1740
-Two-Qubit Gates: 714
-Total Iterations of IR: 10
-Runtime per iteration: None
-
-Comparison of IR vs No IR:
-Metric                              Before IR       After IR     % Decrease
-||x_c - x_q||                        0.554755       0.031299          94.36
-||Ax - b||                           0.169850       0.008765          94.84
-
-Results saved to /path/to/your/qlsas/qnexus/data/results_H1-1E_8x8_<timestamp>.csv
-```
-
-### CSV Output
-
-A CSV file is generated in the `data/` folder for each run, containing summary statistics and lists of errors and residuals for each IR iteration. The filename includes the backend, problem size, and a timestamp for easy identification.
-
----
-
-For further details, see the code in the `qnexus` folder or contact the maintainers.
+**Note**: This implementation is for research and educational purposes. Production use may require additional error handling and optimization.

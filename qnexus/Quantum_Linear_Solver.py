@@ -28,7 +28,8 @@ def robust_wait_for(job_ref, status_func, timeout=None, poll_interval=5):
         if now - last_poll >= poll_interval:
             status = status_func(job_ref)
             # Clear the previous status and print the new one
-            print(f"\rWaiting for job to complete: {status.status}", end='', flush=True)
+            # Use a longer clear to ensure we overwrite any previous text
+            print(f"\r{' ' * 80}\rWaiting for job to complete: {status.status}", end='', flush=True)
             last_poll = now
             # Check if status.status is StatusEnum.COMPLETED, ERROR, or CANCELLED
             if hasattr(status, 'status'):
@@ -37,21 +38,20 @@ def robust_wait_for(job_ref, status_func, timeout=None, poll_interval=5):
                 if (status.status == StatusEnum.COMPLETED or 
                     status_str == "COMPLETED" or 
                     status_str == "JobStatusEnum.COMPLETED"):
-                    print("\r" + " " * 60 + "\r", end='', flush=True)
-                    print("Job completed successfully!")
+                    print(f"\r{' ' * 80}\rJob completed successfully!")
                     break
                 if (status.status == StatusEnum.ERROR or 
                     status_str == "ERROR" or 
                     status_str == "JobStatusEnum.ERROR"):
-                    print("\r" + " "*60 + "\rJob errored!")
+                    print(f"\r{' ' * 80}\rJob errored!")
                     break
                 if (status.status == StatusEnum.CANCELLED or 
                     status_str == "CANCELLED" or 
                     status_str == "JobStatusEnum.CANCELLED"):
-                    print("\r" + " "*60 + "\rJob cancelled!")
+                    print(f"\r{' ' * 80}\rJob cancelled!")
                     break
             if timeout is not None and (now - start_time > timeout):
-                print("\r" + " "*60 + "\rTimeout waiting for job to complete.")
+                print(f"\r{' ' * 80}\rTimeout waiting for job to complete.")
                 break
         time.sleep(0.1)
     return status
@@ -226,9 +226,8 @@ def quantum_linear_solver(A, b, backend, n_qpe_qubits, t0=2*np.pi, shots=1024, i
 
     def process_result(res, backend_instance):
         counts = res.get_counts()
-        b_num = int(math.log2(len(b)))
         num = 0
-        app_sol = np.zeros(2 ** b_num)
+        app_sol = np.zeros(len(b))
         is_hardware = isinstance(backend_instance, str)
 
         for key, value in counts.items():
