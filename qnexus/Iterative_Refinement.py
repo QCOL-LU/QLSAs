@@ -35,13 +35,16 @@ def IR(A, b, precision, max_iter, backend, n_qpe_qubits, shots=1024, noisy=True)
     iteration = 0
     x = np.zeros(d)
     csol = solve(A, b)
+    csol_normalized = csol / norm(csol)
     res_list, error_list = [], []
 
     print("IR: Obtaining initial solution...")
     initial_solution = quantum_linear_solver(A, b, backend=backend, shots=shots, iteration=0, noisy=noisy, n_qpe_qubits=n_qpe_qubits)
     x = initial_solution['x']
-    r = b - np.dot(A, x)
-    error_list.append(norm(csol - x))
+    r = (b - A @ x)
+    assert np.isclose(norm(x), 1, atol=1e-10), f"x is not normalized: {norm(x)}"
+    assert np.isclose(norm(csol_normalized), 1, atol=1e-10), f"csol_normalized is not normalized: {norm(csol_normalized)}"
+    error_list.append(norm(csol_normalized - x)) # both normalized
     res_list.append(norm(r))
     print(f"Initial residual: {res_list[0]:.4f}, Initial error: {error_list[0]:.4f}\n")
     
@@ -50,12 +53,15 @@ def IR(A, b, precision, max_iter, backend, n_qpe_qubits, shots=1024, noisy=True)
         print(f"IR Iteration: {iteration}")
         new_r = nabla * r
         result = quantum_linear_solver(A, new_r, backend=backend, shots=shots, iteration=iteration, noisy=noisy, n_qpe_qubits=n_qpe_qubits)
-        c = result['x']
-        alpha = norm_estimation(A, new_r, c)
-        x += (alpha / nabla) * c
+        x_new = result['x']
+        alpha = norm_estimation(A, new_r, x_new)
+        x += (alpha / nabla) * x_new # scale x by norm of csol
+        x_normalized = x / norm(x)
         
-        r = b - np.dot(A, x)
-        err = norm(csol - x)
+        r = (b - A @ x)
+        assert np.isclose(norm(x_normalized), 1, atol=1e-10), f"x_normalized is not normalized: {norm(x_normalized)}"
+        assert np.isclose(norm(csol_normalized), 1, atol=1e-10), f"csol_normalized is not normalized: {norm(csol_normalized)}"
+        err = norm(csol_normalized - x_normalized) # both normalized
         res = norm(r)
         error_list.append(err)
         res_list.append(res)

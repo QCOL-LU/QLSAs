@@ -10,14 +10,14 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import json
 
-from Generate_Problem import generate_problem
+from Generate_Problem_V2 import generate_problem
 from Iterative_Refinement import IR
 from Quantum_Linear_Solver import quantum_linear_solver
 
-def run_hhl_ir(size=2, backend='H1-1E', shots=1024, iterations=5, qpe_qubits=None, noisy=True):
+def run_hhl_ir(size=2, backend='H1-1E', shots=500, iterations=5, qpe_qubits=None, noisy=True, seed=1):
     """Run HHL with Iterative Refinement and return results as a dictionary."""
     # --- Problem Definition ---
-    problem = generate_problem(size, cond_number=5, sparsity=0.5, seed=2)
+    problem = generate_problem(size, cond_number=5, sparsity=0.5, seed=seed)
     A = problem['A']
     b = problem['b']
 
@@ -99,7 +99,15 @@ def run_hhl_ir(size=2, backend='H1-1E', shots=1024, iterations=5, qpe_qubits=Non
     data_dir = os.path.join(os.path.dirname(__file__), 'data')
     os.makedirs(data_dir, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-    output_filename = f"results_{backend}_{size}x{size}_{timestamp}.csv"
+    
+    # Add noisy/noiseless info for emulator backends
+    emulators = {"H1-1E", "H2-1E", "H2-2E"}
+    if backend in emulators:
+        backend_label = f"{backend}_noisy{noisy}"
+    else:
+        backend_label = backend
+    
+    output_filename = f"results_{backend_label}_{size}x{size}_{timestamp}.csv"
     output_filepath = os.path.join(data_dir, output_filename)
     df.to_csv(output_filepath, index=False)
     print(f"\nResults saved to {output_filepath}")
@@ -118,6 +126,7 @@ if __name__ == '__main__':
     parser.add_argument('--shots', type=int, default=1024, help='Number of shots per circuit execution.')
     parser.add_argument('--iterations', type=int, default=5, help='Max iterations for iterative refinement.')
     parser.add_argument('--qpe-qubits', type=int, default=None, help='Number of QPE (phase estimation) qubits. Default: log_2(problem size).')
+    parser.add_argument('--seed', type=int, default=1, help='Random seed for problem generation (default: 2).')
     noise_group = parser.add_mutually_exclusive_group()
     noise_group.add_argument('--noisy', dest='noisy', action='store_true', help='Enable noisy simulation (default).')
     noise_group.add_argument('--noiseless', dest='noisy', action='store_false', help='Disable noisy simulation.')
@@ -130,5 +139,6 @@ if __name__ == '__main__':
         shots=args.shots,
         iterations=args.iterations,
         qpe_qubits=args.qpe_qubits,
-        noisy=args.noisy
+        noisy=args.noisy,
+        seed=args.seed
     )

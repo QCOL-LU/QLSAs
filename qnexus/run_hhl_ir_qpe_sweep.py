@@ -6,11 +6,11 @@ import pandas as pd
 from run_hhl_ir import run_hhl_ir
 
 # Settings
-size = 2
+size = 16
 backend = 'H1-1E'
 noisy = False
-iterations = 7
-qpe_qubits_list = [1, 2, 3, 4, 5, 6, 7]
+iterations = 8
+qpe_qubits_list = [1, 2, 3, 4, 5, 6, 7, 8]
 data_dir = os.path.join(os.path.dirname(__file__), 'data', 'qpe_sweep')
 os.makedirs(data_dir, exist_ok=True)
 

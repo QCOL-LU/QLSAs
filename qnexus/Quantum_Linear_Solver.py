@@ -111,10 +111,10 @@ def quantum_linear_solver(A, b, backend, n_qpe_qubits, t0=2*np.pi, shots=1024, i
                                           attempt_batching=True, 
                                           no_opt=False, 
                                           simplify_initial=True,
-                                          noisy_simulation=noisy)
+                                          noisy_simulation=False)
         else:
             config = qnx.QuantinuumConfig(device_name=backend_name, 
-                                          attempt_batching=True, 
+                                          attempt_batching=True, #have to change to false sometimes 🫥
                                           no_opt=False, 
                                           simplify_initial=True)
         
@@ -128,8 +128,8 @@ def quantum_linear_solver(A, b, backend, n_qpe_qubits, t0=2*np.pi, shots=1024, i
         if not ref_compile_job:
             raise RuntimeError("Circuit compilation failed.")
         
-        robust_wait_for(ref_compile_job, qnx.jobs.status, timeout=None, poll_interval=5)
-        #qnx.jobs.wait_for(ref_compile_job, timeout=None)
+        #robust_wait_for(ref_compile_job, qnx.jobs.status, timeout=None, poll_interval=5)
+        qnx.jobs.wait_for(ref_compile_job, timeout=None)
         ref_compiled_circuit = qnx.jobs.results(ref_compile_job)[0].get_output()
         print(f"Compilation successful. Compiled circuit ID: {ref_compiled_circuit.id}")
 
@@ -190,8 +190,8 @@ def quantum_linear_solver(A, b, backend, n_qpe_qubits, t0=2*np.pi, shots=1024, i
                 name=f"hhl-ir-execute-{len(b)}x{len(b)}-iter{iteration}-qpeq{n_qpe_qubits}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
             )
         
-        final_status = robust_wait_for(ref_execute_job, qnx.jobs.status, timeout=None, poll_interval=1)
-        #final_status = qnx.jobs.wait_for(ref_execute_job, timeout=None)
+        #final_status = robust_wait_for(ref_execute_job, qnx.jobs.status, timeout=None, poll_interval=1)
+        final_status = qnx.jobs.wait_for(ref_execute_job, timeout=None)
         ref_result = qnx.jobs.results(ref_execute_job)[0]
         print(f"Execution successful. Job ID: {ref_result.id}")
 
@@ -251,8 +251,19 @@ def quantum_linear_solver(A, b, backend, n_qpe_qubits, t0=2*np.pi, shots=1024, i
             if i < 0 and j > 0: qsol[idx] = -j
         return qsol
 
+    # x = process_result(result, backend)
+    # print(f"norm of x: {LA.norm(x)}, norm of csol: {LA.norm(csol)}")
+    # solution['x'] = x
+    # solution['two_norm_error'] = LA.norm(csol - x)
+    # solution['residual_error'] = LA.norm(b - A @ x)
+    # return solution
+
     x = process_result(result, backend)
     solution['x'] = x
-    solution['two_norm_error'] = LA.norm(csol - x)
+    
+    # Normalize classical solution to match quantum solution's normalization
+    csol_normalized = csol / LA.norm(csol)
+    
+    solution['two_norm_error'] = LA.norm(csol_normalized - x)
     solution['residual_error'] = LA.norm(b - A @ x)
     return solution

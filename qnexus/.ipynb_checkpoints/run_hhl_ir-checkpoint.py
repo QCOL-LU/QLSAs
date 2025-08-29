@@ -6,7 +6,7 @@ import qiskit_aer
 import pytket
 import qnexus as qnx
 
-from Generate_Problem import generate_problem
+from Generate_Problem_V2 import generate_problem
 from Iterative_Refinement import IR
 from Quantum_Linear_Solver import quantum_linear_solver
 

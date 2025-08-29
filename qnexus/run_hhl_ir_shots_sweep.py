@@ -44,10 +44,17 @@ if __name__ == "__main__":
         residuals_matrix[i, :] = residuals
         errors_matrix[i, :] = errors
 
+    # Create backend label with noisy/noiseless info for emulators
+    emulators = {"H1-1E", "H2-1E", "H2-2E"}
+    if backend in emulators:
+        backend_label = f"{backend}_noisy{noisy}"
+    else:
+        backend_label = backend
+    
     # Save matrices
     now = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-    residuals_file = os.path.join(data_dir, f'residuals_matrix_{backend}_{size}x{size}_{now}.npy')
-    errors_file = os.path.join(data_dir, f'errors_matrix_{backend}_{size}x{size}_{now}.npy')
+    residuals_file = os.path.join(data_dir, f'residuals_matrix_{backend_label}_{size}x{size}_{now}.npy')
+    errors_file = os.path.join(data_dir, f'errors_matrix_{backend_label}_{size}x{size}_{now}.npy')
     np.save(residuals_file, residuals_matrix)
     np.save(errors_file, errors_matrix)
     print(f"Saved residuals matrix to {residuals_file}")
@@ -56,26 +63,26 @@ if __name__ == "__main__":
     # Plot colormaps
     fig1, ax1 = plt.subplots()
     c1 = ax1.imshow(residuals_matrix, aspect='auto', origin='lower', cmap='viridis')
-    ax1.set_title(f'{size}x{size} on {backend}')
+    ax1.set_title(f'{size}x{size} on {backend_label}')
     ax1.set_xlabel('IR Iteration')
     ax1.set_ylabel('Shots')
     ax1.set_yticks(np.arange(len(shots_list)))
     ax1.set_yticklabels(shots_list)
     fig1.colorbar(c1, ax=ax1, label='Residual')
-    residuals_fig_file = os.path.join(data_dir, f'plot_residuals_matrix_{backend}_{size}x{size}_{now}.png')
+    residuals_fig_file = os.path.join(data_dir, f'plot_residuals_matrix_{backend_label}_{size}x{size}_{now}.png')
     fig1.savefig(residuals_fig_file)
     print(f"Saved residuals colormap to {residuals_fig_file}")
     #plt.show()
 
     fig2, ax2 = plt.subplots()
     c2 = ax2.imshow(errors_matrix, aspect='auto', origin='lower', cmap='magma')
-    ax2.set_title(f'{size}x{size} on {backend}')
+    ax2.set_title(f'{size}x{size} on {backend_label}')
     ax2.set_xlabel('IR Iteration')
     ax2.set_ylabel('Shots')
     ax2.set_yticks(np.arange(len(shots_list)))
     ax2.set_yticklabels(shots_list)
     fig2.colorbar(c2, ax=ax2, label='Error')
-    errors_fig_file = os.path.join(data_dir, f'plot_errors_matrix_{backend}_{size}x{size}_{now}.png')
+    errors_fig_file = os.path.join(data_dir, f'plot_errors_matrix_{backend_label}_{size}x{size}_{now}.png')
     fig2.savefig(errors_fig_file)
     print(f"Saved errors colormap to {errors_fig_file}")
     #plt.show() 
