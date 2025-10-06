@@ -111,7 +111,7 @@ def quantum_linear_solver(A, b, backend, n_qpe_qubits, t0=2*np.pi, shots=1024, i
                                           attempt_batching=True, 
                                           no_opt=False, 
                                           simplify_initial=True,
-                                          noisy_simulation=False)
+                                          noisy_simulation=noisy)
         else:
             config = qnx.QuantinuumConfig(device_name=backend_name, 
                                           attempt_batching=True, #have to change to false sometimes 🫥
@@ -174,21 +174,12 @@ def quantum_linear_solver(A, b, backend, n_qpe_qubits, t0=2*np.pi, shots=1024, i
 
         # Step 6: Execute the circuit
         print("Executing job...")
-        if backend_name in emulators:
-            ref_execute_job = qnx.start_execute_job(
-                programs =[ref_compiled_circuit],  # Must be a list of references
-                n_shots=[shots],
-                backend_config=config,
-                noisy_simulator=noisy,
-                name=f"hhl-ir-execute-{len(b)}x{len(b)}-iter{iteration}-qpeq{n_qpe_qubits}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            )
-        else:
-            ref_execute_job = qnx.start_execute_job(
-                programs =[ref_compiled_circuit],  # Must be a list of references
-                n_shots=[shots],
-                backend_config=config,
-                name=f"hhl-ir-execute-{len(b)}x{len(b)}-iter{iteration}-qpeq{n_qpe_qubits}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            )
+        ref_execute_job = qnx.start_execute_job(
+            programs =[ref_compiled_circuit],  # Must be a list of references
+            n_shots=[shots],
+            backend_config=config,
+            name=f"hhl-ir-execute-{len(b)}x{len(b)}-iter{iteration}-qpeq{n_qpe_qubits}-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        )
         
         #final_status = robust_wait_for(ref_execute_job, qnx.jobs.status, timeout=None, poll_interval=1)
         final_status = qnx.jobs.wait_for(ref_execute_job, timeout=None)

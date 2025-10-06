@@ -1,13 +1,13 @@
 # HHL Problem Dataset
 
-This dataset contains 20 linear system problems specifically designed for testing and benchmarking quantum linear systems algorithms quantum algorithms.
+This dataset contains 20 linear system problems specifically designed for testing and benchmarking HHL (Harrow-Hassidim-Lloyd) quantum algorithms.
 
 ## Dataset Overview
 
 - **Total Problems**: 20
 - **Matrix Sizes**: 2x2, 4x4, 8x8, 16x16 (5 instances each)
 - **Sparsity Levels**: 0.1, 0.3, 0.5, 0.7, 0.9
-- **Condition Numbers**: 2, 5, 10, 20, 50
+- **Condition Numbers**: 5, 10, 15, 20, 25
 
 ## File Structure
 
@@ -104,3 +104,15 @@ All problems are generated with fixed seeds, ensuring:
 - Identical results across different runs
 - Reproducible benchmarks
 - Consistent testing conditions
+
+## Citation
+
+If you use this dataset in your research, please cite:
+```
+HHL Problem Dataset for Quantum Algorithm Testing
+Generated using Generate_Problem_V2.py
+```
+
+## Contact
+
+For questions about this dataset, please refer to the original code repository.

@@ -4,8 +4,8 @@
   "sparsity": 0.7,
   "condition_number": 20,
   "instance_num": 4,
-  "seed": 4283004773,
-  "actual_condition_number": 40.97284126131631,
-  "actual_sparsity": 0.5,
-  "generation_timestamp": "2025-08-26T17:28:17.533196"
+  "seed": 988732592,
+  "actual_condition_number": 19.999999999999943,
+  "actual_sparsity": 0.0,
+  "generation_timestamp": "2025-09-29T20:21:03.711376"
 }

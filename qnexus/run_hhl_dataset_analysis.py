@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import json
 import os
 import time
+import argparse
 from datetime import datetime
 from pathlib import Path
 import warnings
@@ -46,7 +47,7 @@ def load_problem_from_name(problem_name, problems_dir="problems"):
         print(f"Error loading problem {problem_name}: {e}")
         return None
 
-def run_hhl_on_problem(problem_name, A, b, backend_name="H1-1E", max_iterations=5):
+def run_hhl_on_problem(problem_name, A, b, backend_name="H1-1E", max_iterations=10):
     """
     Run HHL with iterative refinement on a single problem.
     
@@ -79,8 +80,8 @@ def run_hhl_on_problem(problem_name, A, b, backend_name="H1-1E", max_iterations=
             max_iter=max_iterations,
             backend=backend_name,
             n_qpe_qubits=int(np.log2(len(b))),  
-            shots=200,      # Default shots
-            noisy=True       # Enable noise for realistic results
+            shots=128,      # Default shots
+            noisy=False       # Enable noise for realistic results
         )
         
         return {
@@ -102,7 +103,7 @@ def run_hhl_on_problem(problem_name, A, b, backend_name="H1-1E", max_iterations=
             'error': str(e)
         }
 
-def analyze_dataset(problems_dir="problems", backend_name="H1-1E", max_iterations=5):
+def analyze_dataset(problems_dir="problems", backend_name="H1-1E", max_iterations=10, max_size=None):
     """
     Analyze the entire dataset by running HHL on all problems.
     
@@ -114,6 +115,8 @@ def analyze_dataset(problems_dir="problems", backend_name="H1-1E", max_iteration
         Backend to use for all runs
     max_iterations : int
         Maximum number of IR iterations
+    max_size : int, optional
+        Maximum problem size to include (e.g., 8 for 2x2, 4x4, 8x8 only)
     
     Returns
     -------
@@ -138,6 +141,11 @@ def analyze_dataset(problems_dir="problems", backend_name="H1-1E", max_iteration
         problems_by_size[size].append(problem_name)
     
     print(f"Problem sizes found: {sorted(problems_by_size.keys())}")
+    
+    # Filter by max_size if specified
+    if max_size is not None:
+        problems_by_size = {size: problems for size, problems in problems_by_size.items() if size <= max_size}
+        print(f"Filtered to sizes ≤ {max_size}: {sorted(problems_by_size.keys())}")
     
     # Run analysis on all problems
     all_results = {}
@@ -230,7 +238,7 @@ def aggregate_results(results):
     
     return aggregated
 
-def create_high_quality_plot(aggregated_data, save_path="hhl_dataset_analysis.png"):
+def create_high_quality_plot(aggregated_data, save_path="hhl_dataset_analysis.pdf"):
     """
     Create a high-quality, paper-ready plot.
     
@@ -267,7 +275,7 @@ def create_high_quality_plot(aggregated_data, save_path="hhl_dataset_analysis.pn
         means = data['mean_residuals']
         stds = data['std_residuals']
         
-        # Convert to log10 for plotting
+        # Convert to log10 for plotting (matching run_hhl_ir.py format)
         log_means = np.log10(means)
         log_stds = stds / (np.array(means) * np.log(10))  # Error propagation for log10
         
@@ -283,14 +291,11 @@ def create_high_quality_plot(aggregated_data, save_path="hhl_dataset_analysis.pn
             capthick=1.5
         )
     
-    # Customize plot
-    ax.set_xlabel('Iterative Refinement Iteration', fontsize=14, fontweight='bold')
+    # Customize plot (matching run_hhl_ir.py format)
+    ax.set_xlabel('IR Iteration', fontsize=14, fontweight='bold')
     ax.set_ylabel(r'$\log_{10}(\|Ax-b\|_2)$', fontsize=14, fontweight='bold')
-    ax.set_title('HHL Algorithm Performance Across System Sizes\n(Error bars: ±1 standard deviation)', 
-                 fontsize=16, fontweight='bold', pad=20)
     
-    # Set axis properties
-    ax.set_xlim(-0.2, 5.2)
+    # Set axis properties (let matplotlib auto-scale like run_hhl_ir.py)
     ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.8)
     ax.tick_params(axis='both', which='major', labelsize=12, width=1.5, length=6)
     ax.tick_params(axis='both', which='minor', width=1, length=3)
@@ -300,7 +305,6 @@ def create_high_quality_plot(aggregated_data, save_path="hhl_dataset_analysis.pn
     
     # Customize legend
     legend = ax.legend(
-        loc='upper right',
         fontsize=12,
         frameon=True,
         fancybox=True,
@@ -310,18 +314,12 @@ def create_high_quality_plot(aggregated_data, save_path="hhl_dataset_analysis.pn
         borderpad=0.5
     )
     legend.get_frame().set_linewidth(1.0)
+
     
-    # Add text box with analysis info
-    total_problems = sum(data['total_runs'] for data in aggregated_data.values())
-    successful_problems = sum(data['successful_runs'] for data in aggregated_data.values())
-    
-    info_text = f'Dataset: {successful_problems}/{total_problems} problems successful\nBackend: H1-1E (noisy simulation)'
-    ax.text(0.02, 0.98, info_text, transform=ax.transAxes, fontsize=10,
-            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     
     # Tight layout and save
     plt.tight_layout()
-    plt.savefig(save_path, dpi=300, bbox_inches='tight', 
+    plt.savefig(save_path, format='pdf', bbox_inches='tight', 
                 facecolor='white', edgecolor='none', 
                 pad_inches=0.1)
     
@@ -366,13 +364,32 @@ def save_analysis_data(results, aggregated_data, save_path="hhl_dataset_analysis
 
 def main():
     """Main function to run the complete analysis."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='HHL Dataset Analysis with Iterative Refinement')
+    parser.add_argument('--max-size', type=int, default=None, 
+                       help='Maximum problem size to include (e.g., 8 for 2x2, 4x4, 8x8 only)')
+    parser.add_argument('--backend', type=str, default='H1-1E',
+                       help='Backend to use (default: H1-1E)')
+    parser.add_argument('--max-iterations', type=int, default=5,
+                       help='Maximum number of IR iterations (default: 5)')
+    parser.add_argument('--problems-dir', type=str, default='problems',
+                       help='Directory containing problem files (default: problems)')
+    
+    args = parser.parse_args()
+    
     print("HHL Dataset Analysis - Complete Dataset Evaluation")
     print("=" * 60)
     
     # Configuration
-    problems_dir = "problems"
-    backend_name = "H1-1E"
-    max_iterations = 5
+    problems_dir = args.problems_dir
+    backend_name = args.backend
+    max_iterations = args.max_iterations
+    max_size = args.max_size
+    
+    if max_size is not None:
+        print(f"Running analysis on problems up to {max_size}x{max_size}")
+    else:
+        print("Running analysis on all problem sizes")
     
     # Check if problems directory exists
     if not os.path.exists(problems_dir):
@@ -381,25 +398,38 @@ def main():
         return
     
     # Create output directory
-    output_dir = "hhl_analysis_results"
+    if max_size is not None:
+        output_dir = f"hhl_analysis_results_subset_{max_size}"
+    else:
+        output_dir = "hhl_analysis_results"
     os.makedirs(output_dir, exist_ok=True)
     
     # Run analysis
     print("Starting HHL analysis on all dataset problems...")
-    results = analyze_dataset(problems_dir, backend_name, max_iterations)
+    results = analyze_dataset(problems_dir, backend_name, max_iterations, max_size=max_size)
     
     # Aggregate results
     print("\nAggregating results...")
     aggregated_data = aggregate_results(results)
     
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
     # Create high-quality plot
     print("\nCreating high-quality plot...")
-    plot_path = os.path.join(output_dir, "hhl_dataset_analysis.png")
+    if max_size is not None:
+        plot_filename = f"hhl_dataset_analysis_subset_{max_size}_{timestamp}.pdf"
+    else:
+        plot_filename = f"hhl_dataset_analysis_{timestamp}.pdf"
+    plot_path = os.path.join(output_dir, plot_filename)
     fig = create_high_quality_plot(aggregated_data, plot_path)
     
     # Save all data
     print("\nSaving analysis data...")
-    data_path = os.path.join(output_dir, "hhl_dataset_analysis_data.json")
+    if max_size is not None:
+        data_filename = f"hhl_dataset_analysis_subset_{max_size}_{timestamp}.json"
+    else:
+        data_filename = f"hhl_dataset_analysis_data_{timestamp}.json"
+    data_path = os.path.join(output_dir, data_filename)
     save_analysis_data(results, aggregated_data, data_path)
     
     # Print summary
@@ -412,8 +442,8 @@ def main():
         print(f"{size}×{size}: {data['successful_runs']}/{data['total_runs']} successful")
     
     print(f"\nResults saved in: {output_dir}/")
-    print("  - hhl_dataset_analysis.png (high-quality plot)")
-    print("  - hhl_dataset_analysis_data.json (complete data)")
+    print(f"  - {plot_filename} (high-quality plot)")
+    print(f"  - {data_filename} (complete data)")
     
     # Show plot
     plt.show()

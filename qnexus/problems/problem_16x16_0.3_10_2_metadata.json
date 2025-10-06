@@ -1,0 +1,11 @@
+{
+  "problem_name": "problem_16x16_0.3_10_2",
+  "size": 16,
+  "sparsity": 0.3,
+  "condition_number": 10,
+  "instance_num": 2,
+  "seed": 2144772195,
+  "actual_condition_number": 10.000000000000023,
+  "actual_sparsity": 0.0,
+  "generation_timestamp": "2025-09-29T20:21:03.713739"
+}

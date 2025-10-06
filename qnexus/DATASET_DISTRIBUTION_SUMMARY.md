@@ -5,7 +5,7 @@
 **Total Problems**: 20 linear system instances  
 **Purpose**: Testing and benchmarking HHL (Harrow-Hassidim-Lloyd) quantum algorithms  
 **Matrix Sizes**: 2x2, 4x4, 8x8, 16x16 (5 instances each)  
-**Parameter Range**: Sparsity 0.1-0.9, Condition Numbers 2-50  
+**Parameter Range**: Sparsity, condition number
 
 ## 📁 What's Included
 
