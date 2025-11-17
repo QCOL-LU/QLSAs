@@ -3,7 +3,7 @@ Iterative Refinement for quantum linear systems algorithms.
 Works for any QLSA, and works for any backend.
 """
 
-from Quantum_Linear_Solver import quantum_linear_solver
+from solvers import *
 import numpy as np
 import matplotlib.pyplot as plt
 from numpy.linalg import solve, norm
@@ -22,7 +22,7 @@ def norm_estimation(A, b, x):
         return 1e-10  # Use a smaller value for better numerical stability
     return np.dot(v, b) / denominator
 
-def IR(A, b, precision, max_iter, backend, n_qpe_qubits, shots=1024, noisy=True):
+def IR(A, b, precision, max_iter, solver, n_qpe_qubits, shots=1024, noisy=True):
     """
     Iterative Refinement for quantum linear solver.
     Args:
@@ -44,7 +44,7 @@ def IR(A, b, precision, max_iter, backend, n_qpe_qubits, shots=1024, noisy=True)
     res_list, error_list = [], []
 
     print("IR: Obtaining initial solution...")
-    initial_solution = quantum_linear_solver(A, b, backend=backend, shots=shots, iteration=0, noisy=noisy, n_qpe_qubits=n_qpe_qubits)
+    initial_solution = solver(A, b, backend=backend, shots=shots, iteration=0, noisy=noisy, n_qpe_qubits=n_qpe_qubits) # TODO: fix syntax for general solver
     x = initial_solution['x']
     r = (b - A @ x)
     assert np.isclose(norm(x), 1, atol=1e-10), f"x is not normalized: {norm(x)}"

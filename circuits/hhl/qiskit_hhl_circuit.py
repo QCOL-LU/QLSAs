@@ -4,7 +4,7 @@ import math
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
 from qiskit.circuit.library import Initialize, RYGate, HamiltonianGate, QFT
 
-def hhl_circuit(A, b, n_qpe_qubits, t0=2*np.pi):
+def qiskit_hhl_circuit(A, b, n_qpe_qubits, t0=2*np.pi):
     # ==========================================================================
     # Preprocessing
     # ==========================================================================
@@ -23,7 +23,7 @@ def hhl_circuit(A, b, n_qpe_qubits, t0=2*np.pi):
     # ==========================================================================
     ancilla_qbit = QuantumRegister(1, name='anc')
     n_b = int(math.log2(len(b)))
-    q_reg = QuantumRegister(n_qpe_qubits, name='q')  # QPE register size is now variable
+    q_reg = QuantumRegister(n_qpe_qubits, name='q')  # QPE register size is variable
     b_reg = QuantumRegister(n_b, name='b')
     ancilla_result = ClassicalRegister(1, name='anc_result')
     b_vec = ClassicalRegister(n_b, name='b_vec')
