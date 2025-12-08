@@ -1,0 +1,1 @@
+Takes a circuit as input, and transpiles and runs it on a specified backend to retrieve shot count results.

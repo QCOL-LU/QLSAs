@@ -1,0 +1,1 @@
+# Contains an abstract Algorithms base class, with conrete implementations of each algorithm that inherit the base and stores its own hyperparameters.

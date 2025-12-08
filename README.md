@@ -69,30 +69,32 @@ pip install -r requirements.txt
 **For IBM Quantum (Qiskit):**
 ```bash
 # No additional setup required if using Qiskit
-# Configure IBM Quantum credentials when needed
+# Configure IBM Quantum credentials by navigating to
+save_qiskit_account.ipynb
 ```
 
 **For Quantinuum (qnexus):**
 ```bash
-# Authenticate with Quantinuum
+# Authenticate with Quantinuum through terminal
 qnx login
+# Alternatively, navigate to
+save_nexus_account.ipynb
 ```
 
 ## Project Structure
 
 ```
 QLSAs/
-├── circuits/              # Algorithm circuit implementations
-│   ├── hhl/              # HHL algorithm circuits
-│   ├── vqlsa/            # VQLSA algorithm circuits
-│   └── qhd/              # QHD algorithm circuits
-├── solvers/              # Solver implementations
-├── iterative_refinement/ # Iterative refinement utilities
+├── circuits/                # Algorithm circuit implementations
+│   ├── hhl/                 # HHL algorithm circuits
+│   ├── vqlsa/               # VQLSA algorithm circuits
+│   └── qhd/                 # QHD algorithm circuits
+├── solvers/                 # Solver implementations including tomography capabilities.  Access point for end users.
+├── iterative_refinement/    # Iterative refinement utilities for all QLSAs
 ├── linear_systems_problems/ # Problem generation and datasets
-├── qiskit/               # Qiskit-specific implementations
-├── qnexus/               # qnexus-specific implementations
-├── requirements.txt      # Python dependencies
-└── README.md            # This file
+├── data/                    # Saved experimental results and metadata
+├── requirements.txt         # Python dependencies
+└── README.md                # This file
 ```
 
 ## Usage

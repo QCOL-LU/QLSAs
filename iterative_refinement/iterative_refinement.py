@@ -1,6 +1,6 @@
 """
 Iterative Refinement for quantum linear systems algorithms.
-Works for any QLSA, and works for any backend.
+Works for any QLSA on any appropriate backend.
 """
 
 from solvers import *
@@ -11,30 +11,22 @@ import itertools
 from qiskit_aer import AerSimulator
 import os
 from datetime import datetime
+from norm_estimation import norm_estimation
+from sign_estimation import sign_estimation
 
-def norm_estimation(A, b, x):
-    v = A @ x
-    denominator = np.dot(v, v)
-    if denominator == 0:
-        # If denominator is zero, the vector x is in the null space of A
-        # This indicates a degenerate case. Return a small value to continue iteration.
-        # In practice, this might indicate the system is ill-conditioned.
-        return 1e-10  # Use a smaller value for better numerical stability
-    return np.dot(v, b) / denominator
 
-def IR(A, b, precision, max_iter, solver, n_qpe_qubits, shots=1024, noisy=True):
+def IR(
+    A: np.ndarray, 
+    b: np.ndarray, 
+    precision: float, 
+    max_iter: int, 
+    solver: callable, 
+    n_qpe_qubits: int, 
+    shots: int = 1024, 
+    noisy: bool = True
+) -> dict:
     """
     Iterative Refinement for quantum linear solver.
-    Args:
-        A: Matrix
-        b: Vector
-        precision: float
-        max_iter: int
-        backend: Backend name or AerSimulator
-        noisy: bool, optional. If True, enables noisy simulation (default True)
-        n_qpe_qubits: int. Number of QPE qubits.
-    Returns:
-        dict with refined solution, residuals, errors, etc.
     """
     nabla, rho, d = 1, 2, len(A)
     iteration = 0

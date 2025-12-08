@@ -1,0 +1,1 @@
+Process shot count results into normalized vector proportional to $\vec{x}$, and perform tomography to estimate $\vec{x}$.

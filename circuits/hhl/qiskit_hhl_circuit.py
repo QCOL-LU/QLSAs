@@ -1,10 +1,36 @@
+"""
+Qiskit implementation of the HHL circuit. Can be run on Qiskit backends, or on Quantinuum backends after conversion to tket.
+
+Input:
+A: The matrix representing the linear system.
+b: The vector representing the right-hand side of the linear system.
+n_qpe_qubits: The number of qubits to use for the QPE, detirmining the precision of the eigenvalue estimation.
+t0: The time parameter used in the controlled-Hamiltonian operations.
+
+Output:
+QuantumCircuit: The quantum circuit for solving the linear system using HHL.
+"""
 import numpy as np
-from numpy import linalg as LA
 import math
+from numpy import linalg as LA
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
 from qiskit.circuit.library import Initialize, RYGate, HamiltonianGate, QFT
 
-def qiskit_hhl_circuit(A, b, n_qpe_qubits, t0=2*np.pi):
+def qiskit_hhl_circuit(
+    A: np.ndarray,
+    b: np.ndarray,
+    n_qpe_qubits: int,
+    t0: float = 2*np.pi # Default time parameter for the controlled-Hamiltonian operations.
+) -> QuantumCircuit:
+    """
+    Qiskit implementation of the HHL circuit. Can be run on Qiskit backends, or on Quantinuum backends after conversion to tket.
+
+    Input:
+    A: The matrix representing the linear system.
+    b: The vector representing the right-hand side of the linear system.
+    n_qpe_qubits: The number of qubits to use for the QPE, detirmining the precision of the eigenvalue estimation.
+    t0: The time parameter used in the controlled-Hamiltonian operations.
+    """
     # ==========================================================================
     # Preprocessing
     # ==========================================================================
@@ -46,7 +72,7 @@ def qiskit_hhl_circuit(A, b, n_qpe_qubits, t0=2*np.pi):
     circ.append(iqft, q_reg)
     circ.barrier()
     # Eigenvalue-based rotation
-    # This part can be tricky. A common simplification is to use a constant rotation
+    # A common simplification is to use a constant rotation
     # C = 1 / cond(A)
     # angle = 2 * np.arcsin(C) # This is one approach
     # For simplicity, let's assume a fixed rotation angle as a placeholder
