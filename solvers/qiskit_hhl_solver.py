@@ -9,7 +9,7 @@ def quantum_linear_solver(A, b, backend, shots=1024, noisy=True, n_qpe_qubits=3,
     Returns:
     The post-processed result of the quantum linear solver (x), and a whole bunch of stats about the circuit.
     """
-
+    
     csol = np.linalg.solve(A / LA.norm(b), b / LA.norm(b))
     solution = {}
 
