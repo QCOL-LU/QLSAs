@@ -1,0 +1,10 @@
+numpy==1.26.4
+pandas==2.2.3
+matplotlib==3.9.2
+qiskit==1.2.2
+qiskit-aer==0.15.1
+pylatexenc==2.10.0
+pytket==1.39.0
+pytket-qiskit==0.56.0
+qnexus==0.15.0
+guppylang==0.18.0

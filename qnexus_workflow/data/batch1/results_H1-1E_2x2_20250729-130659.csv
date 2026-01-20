@@ -1,0 +1,2 @@
+Backend,Problem Size,Condition Number,Sparsity,Number of Qubits,Circuit Depth,Total Gates,Two-Qubit Gates,Iteration Runtime,||x_c - x_q|| without IR,||x_c - x_q|| with IR,||Ax - b|| without IR,||Ax - b|| with IR,Total Iterations of IR,Residuals List,Errors List
+H1-1E,2 x 2,1.2580645161290318,0.5,3,22,35,3,,0.9006669879322712,0.0760756666169977,0.6706907977158899,0.04744082435121132,3,"[0.6706907977158899, 0.3369974885927698, 0.12475697187353298, 0.04744082435121132]","[0.9006669879322712, 0.47304357305546485, 0.17290030477846877, 0.0760756666169977]"

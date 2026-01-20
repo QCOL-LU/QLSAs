@@ -1,0 +1,244 @@
+{
+  "dataset_info": {
+    "name": "HHL Problem Dataset",
+    "description": "Linear system problems for HHL algorithm testing",
+    "total_problems": 20,
+    "generation_date": "2025-09-29T20:21:03.735261",
+    "matrix_sizes": [
+      2,
+      4,
+      8,
+      16
+    ],
+    "sparsity_range": [
+      0.1,
+      0.9
+    ],
+    "condition_number_range": [
+      5,
+      25
+    ]
+  },
+  "problems": [
+    {
+      "problem_name": "problem_2x2_0.1_5_1",
+      "size": 2,
+      "sparsity": 0.1,
+      "condition_number": 5,
+      "instance_num": 1,
+      "seed": 2468352589,
+      "actual_condition_number": 5.000000000000001,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.709249"
+    },
+    {
+      "problem_name": "problem_2x2_0.3_10_2",
+      "size": 2,
+      "sparsity": 0.3,
+      "condition_number": 10,
+      "instance_num": 2,
+      "seed": 1148451097,
+      "actual_condition_number": 9.999999999999998,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.709634"
+    },
+    {
+      "problem_name": "problem_2x2_0.5_15_3",
+      "size": 2,
+      "sparsity": 0.5,
+      "condition_number": 15,
+      "instance_num": 3,
+      "seed": 2376410279,
+      "actual_condition_number": 15.0,
+      "actual_sparsity": 0.5,
+      "generation_timestamp": "2025-09-29T20:21:03.709900"
+    },
+    {
+      "problem_name": "problem_2x2_0.7_20_4",
+      "size": 2,
+      "sparsity": 0.7,
+      "condition_number": 20,
+      "instance_num": 4,
+      "seed": 2392351926,
+      "actual_condition_number": 19.999999999999996,
+      "actual_sparsity": 0.5,
+      "generation_timestamp": "2025-09-29T20:21:03.710104"
+    },
+    {
+      "problem_name": "problem_2x2_0.9_25_5",
+      "size": 2,
+      "sparsity": 0.9,
+      "condition_number": 25,
+      "instance_num": 5,
+      "seed": 56267014,
+      "actual_condition_number": 25.0,
+      "actual_sparsity": 0.5,
+      "generation_timestamp": "2025-09-29T20:21:03.710293"
+    },
+    {
+      "problem_name": "problem_4x4_0.1_5_1",
+      "size": 4,
+      "sparsity": 0.1,
+      "condition_number": 5,
+      "instance_num": 1,
+      "seed": 648740750,
+      "actual_condition_number": 4.999999999999998,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.710725"
+    },
+    {
+      "problem_name": "problem_4x4_0.3_10_2",
+      "size": 4,
+      "sparsity": 0.3,
+      "condition_number": 10,
+      "instance_num": 2,
+      "seed": 599186412,
+      "actual_condition_number": 10.0,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.710955"
+    },
+    {
+      "problem_name": "problem_4x4_0.5_15_3",
+      "size": 4,
+      "sparsity": 0.5,
+      "condition_number": 15,
+      "instance_num": 3,
+      "seed": 3419272361,
+      "actual_condition_number": 14.999999999999993,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.711163"
+    },
+    {
+      "problem_name": "problem_4x4_0.7_20_4",
+      "size": 4,
+      "sparsity": 0.7,
+      "condition_number": 20,
+      "instance_num": 4,
+      "seed": 988732592,
+      "actual_condition_number": 19.999999999999943,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.711376"
+    },
+    {
+      "problem_name": "problem_4x4_0.9_25_5",
+      "size": 4,
+      "sparsity": 0.9,
+      "condition_number": 25,
+      "instance_num": 5,
+      "seed": 874804689,
+      "actual_condition_number": 25.0,
+      "actual_sparsity": 0.75,
+      "generation_timestamp": "2025-09-29T20:21:03.711574"
+    },
+    {
+      "problem_name": "problem_8x8_0.1_5_1",
+      "size": 8,
+      "sparsity": 0.1,
+      "condition_number": 5,
+      "instance_num": 1,
+      "seed": 3391641677,
+      "actual_condition_number": 4.999999999999992,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.711867"
+    },
+    {
+      "problem_name": "problem_8x8_0.3_10_2",
+      "size": 8,
+      "sparsity": 0.3,
+      "condition_number": 10,
+      "instance_num": 2,
+      "seed": 2491332532,
+      "actual_condition_number": 9.999999999999995,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.712129"
+    },
+    {
+      "problem_name": "problem_8x8_0.5_15_3",
+      "size": 8,
+      "sparsity": 0.5,
+      "condition_number": 15,
+      "instance_num": 3,
+      "seed": 1080300432,
+      "actual_condition_number": 14.999999999999995,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.712385"
+    },
+    {
+      "problem_name": "problem_8x8_0.7_20_4",
+      "size": 8,
+      "sparsity": 0.7,
+      "condition_number": 20,
+      "instance_num": 4,
+      "seed": 1877050863,
+      "actual_condition_number": 20.000000000000032,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.712623"
+    },
+    {
+      "problem_name": "problem_8x8_0.9_25_5",
+      "size": 8,
+      "sparsity": 0.9,
+      "condition_number": 25,
+      "instance_num": 5,
+      "seed": 2939651478,
+      "actual_condition_number": 25.0,
+      "actual_sparsity": 0.875,
+      "generation_timestamp": "2025-09-29T20:21:03.712825"
+    },
+    {
+      "problem_name": "problem_16x16_0.1_5_1",
+      "size": 16,
+      "sparsity": 0.1,
+      "condition_number": 5,
+      "instance_num": 1,
+      "seed": 3743215980,
+      "actual_condition_number": 5.0000000000000036,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.713292"
+    },
+    {
+      "problem_name": "problem_16x16_0.3_10_2",
+      "size": 16,
+      "sparsity": 0.3,
+      "condition_number": 10,
+      "instance_num": 2,
+      "seed": 2144772195,
+      "actual_condition_number": 10.000000000000023,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.713739"
+    },
+    {
+      "problem_name": "problem_16x16_0.5_15_3",
+      "size": 16,
+      "sparsity": 0.5,
+      "condition_number": 15,
+      "instance_num": 3,
+      "seed": 859664123,
+      "actual_condition_number": 15.000000000000025,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.714162"
+    },
+    {
+      "problem_name": "problem_16x16_0.7_20_4",
+      "size": 16,
+      "sparsity": 0.7,
+      "condition_number": 20,
+      "instance_num": 4,
+      "seed": 1909218328,
+      "actual_condition_number": 19.99999999999996,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.714563"
+    },
+    {
+      "problem_name": "problem_16x16_0.9_25_5",
+      "size": 16,
+      "sparsity": 0.9,
+      "condition_number": 25,
+      "instance_num": 5,
+      "seed": 780760029,
+      "actual_condition_number": 24.999999999999996,
+      "actual_sparsity": 0.0,
+      "generation_timestamp": "2025-09-29T20:21:03.715095"
+    }
+  ]
+}

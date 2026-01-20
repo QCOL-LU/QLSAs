@@ -1,10 +1,9 @@
 from abc import ABC, abstractmethod
 from qiskit import QuantumCircuit
+import numpy as np
 
 class QLSA(ABC):
-    def __init__(self):
-        pass
 
     @abstractmethod
-    def build_circuit(self, state_prep_circuit: QuantumCircuit, readout_circuit: QuantumCircuit, **kwargs) -> QuantumCircuit:
-        pass
+    def build_circuit(self, A: np.ndarray, b: np.ndarray) -> QuantumCircuit:
+        raise NotImplementedError
