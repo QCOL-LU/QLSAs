@@ -24,15 +24,16 @@ class QuantumLinearSolver:
         optimization_level: int = 3,
         executer: Optional[Executer] = None,
         post_processor: Optional[Post_Processor] = None,
+        mode: Optional[str] = None,
     ) -> None:
         self.qlsa = qlsa
         self.backend = backend
         self.shots = shots
         self.optimization_level = optimization_level
-
         self.executer = executer or Executer()
         self.post_processor = post_processor or Post_Processor()
-
+        self.mode = mode
+        
     def solve(self, A: np.ndarray, b: np.ndarray) -> np.ndarray:
         """Run the full workflow and return the (post-processed) solution vector."""
         circuit = self.qlsa.build_circuit(A, b)

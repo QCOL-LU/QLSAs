@@ -16,6 +16,7 @@ class HHL(QLSA):
         t0: float,
         swap_test_vector: Optional[np.ndarray] = None
     ):
+    # TODO: add all attributes as args to the build_circuit method instead of initializing the class
         """
         Initialize the HHL QLSA.
         Args:

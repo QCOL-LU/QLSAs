@@ -2,10 +2,7 @@ from qlsas.solver import QuantumLinearSolver
 import numpy as np
 import matplotlib.pyplot as plt
 import numpy.linalg as LA
-import itertools
-from qiskit_aer import AerSimulator
-import os
-from datetime import datetime
+
 
 class Refiner:
     def __init__(self, 
@@ -36,37 +33,37 @@ class Refiner:
         Returns:
             dict with refined solution, residuals, errors, etc.
         """
-        A                = self.A
-        b                = self.b
-        nabla            = 1              # scaling factor
-        rho              = 2              # incremental scaling
-        d                = len(A)         # dimension
-        iteration        = 0              # iteration counter
-        x                = np.zeros(d)    # solution
-        r                = b              # residual
-        con              = LA.cond(A)     # condition number
-        csol             = LA.solve(A, b) # classical solution
-        csol_normalized  = csol / LA.norm(csol)
-        res_list         = []             # residual list
-        error_list       = []             # error list
-        x_list           = []             # solution list
+        A                     = self.A
+        b                     = self.b
+        nabla                 = 1              # scaling factor
+        rho                   = 2              # incremental scaling
+        d                     = len(A)         # dimension
+        iteration             = 0              # iteration counter
+        x                     = np.zeros(d)    # solution
+        r                     = b              # residual
+        con                   = LA.cond(A)     # condition number
+        csol                  = LA.solve(A, b) # classical solution
+        csol_normalized       = csol / LA.norm(csol)
+        res_list              = []             # residual list
+        error_list            = []             # error list
+        x_list                = []             # solution list
 
+        # terminition conditions
         while (LA.norm(r) > precision and iteration <= max_iter):
             print(f"IR Iteration: {iteration}")
-            new_r = nabla * r
-            A_normalized = A / LA.norm(new_r)
-            new_r_normalized = new_r / LA.norm(new_r)
-            new_x = self.solver.solve(A_normalized, new_r_normalized) # quantum linear solver result
-            alpha = self.norm_estimation(A, new_r, new_x)
-            x += (alpha / nabla) * new_x # scale x by norm of csol
+            new_r             = nabla * r
+            A_normalized      = A / LA.norm(new_r)
+            new_r_normalized  = new_r / LA.norm(new_r)
+            new_x             = self.solver.solve(A_normalized, new_r_normalized) # quantum linear solver result
+            alpha             = self.norm_estimation(A, new_r, new_x)
+            x                += (alpha / nabla) * new_x # scale x by norm of csol
             x_list.append(x) # append new solution to list
-            x_normalized = x / LA.norm(x)
-            
-            r = (b - A @ x) # next residual
+            x_normalized      = x / LA.norm(x)
+            r                 = (b - A @ x) # next residual
             assert np.isclose(LA.norm(x_normalized), 1, atol=1e-10), f"x_normalized is not normalized: {LA.norm(x_normalized)}"
             assert np.isclose(LA.norm(csol_normalized), 1, atol=1e-10), f"csol_normalized is not normalized: {LA.norm(csol_normalized)}"
-            err = LA.norm(csol_normalized - x_normalized) # both normalized
-            res = LA.norm(r)
+            err               = LA.norm(csol_normalized - x_normalized) # both normalized
+            res               = LA.norm(r)
             error_list.append(err)
             res_list.append(res)
             
