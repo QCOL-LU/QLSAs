@@ -8,7 +8,7 @@ class Post_Processor:
     Post_Processor class for post-processing the result of the quantum linear solver.
     """
 
-    def process(
+    def process( # TODO: add support for quantinuum result, and swap test readout from either backend
         self, 
         result,
         A: np.ndarray,
@@ -40,6 +40,8 @@ class Post_Processor:
         num_successful_shots = 0 # for normalization
         approximate_solution = np.zeros(len(b))
 
+        total_shots = sum(counts.values())
+        print(f"total shots: {total_shots}")
         for key, value in counts.items():
             if key[-1] == '1': # ancilla measurement successful
                 num_successful_shots += value
@@ -49,6 +51,9 @@ class Post_Processor:
             raise ValueError("No successful shots.")
         else:
             approximate_solution = np.sqrt(approximate_solution/num_successful_shots)
+        
+        print(f"num_successful_shots: {num_successful_shots}")
+        print(f"success rate: {num_successful_shots / total_shots}")
         
         # extract signs of each solution coordinate, using classical solution for now (to be updated)
         classical_solution = LA.solve(A / LA.norm(b), b / LA.norm(b))

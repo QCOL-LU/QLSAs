@@ -5,7 +5,43 @@ from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
 from qiskit.circuit.library import Initialize, RYGate, HamiltonianGate, QFT
 import numpy as np
 import math
+from numpy.linalg import cond
 from qlsas.data_loader import StatePrep
+
+
+def eig_inversion_oracle(
+    circ,
+    qpe_register,
+    ancilla_qubit,
+    t0: float,
+    eigs: np.ndarray,
+    C: float,
+    unwrap_phase: bool = False,
+    lam_floor: float = 1e-12,
+):
+    m = len(qpe_register)
+    eigs = np.real_if_close(eigs)
+    eigs = np.real(eigs)
+    eigs = np.sort(np.abs(eigs))  # SPD-friendly
+    eigs[eigs < lam_floor] = lam_floor
+
+    for k in range(2**m):
+        phi = k / (2**m)
+        if unwrap_phase and phi >= 0.5:
+            phi -= 1.0
+        lam_est = abs((2*np.pi*phi) / t0)
+        lam_est = max(lam_est, lam_floor)
+
+        # near-term solution: snap phase-bin estimate to nearest true eigenvalue
+        lam = eigs[np.argmin(np.abs(eigs - lam_est))]
+
+        ratio = C / lam
+        ratio = min(max(ratio, 0.0), 1.0)
+        theta = 2*np.arcsin(ratio)
+
+        ctrl_state = format(k, f"0{m}b")
+        mc_ry = RYGate(theta).control(m, ctrl_state=ctrl_state)
+        circ.append(mc_ry, list(qpe_register) + [ancilla_qubit])
 
 class HHL(QLSA):
     def __init__(
@@ -139,16 +175,29 @@ class HHL(QLSA):
         # A common simplification is to use a constant rotation
         # C = 1 / cond(A)
         # angle = 2 * np.arcsin(C) # This is one approach
-        # For simplicity, let's assume a fixed rotation angle as a placeholder
-        # This part requires careful calibration based on eigenvalue estimates
-        # WARNING: This is a simplified implementation. For production use, 
-        # the rotation angles should be calculated based on the actual eigenvalues.
-        for i in range(len(qpe_register)):
-            angle = (2*np.pi) / (2**(i+1)) # Simplified rotation, not eigenvalue-dependent
-            circ.cry(angle, qpe_register[i], ancilla_flag_register[0])
+        # for i in range(len(qpe_register)):
+        #     #angle = (2*np.pi) / (2**(i+1)) # Simplified rotation, not eigenvalue-dependent
+        #     circ.cry(angle, qpe_register[i], ancilla_flag_register[0])
+        
+        # eigs = np.linalg.eigvals(A)
+        # for i in range(1, len(qpe_register) + 1):
+        #     U = RYGate((2*np.pi)/eigs[i-1]).control(1)  # or 2**(len(q_reg)+1-i) factor?
+        #     circ.append(U, [i, 0])
+
+        eigs = np.linalg.eigvalsh(A)          # Hermitian → stable
+        eig_inversion_oracle(
+        circ, 
+        qpe_register, 
+        ancilla_flag_register[0], 
+        self.t0, 
+        eigs, 
+        C = 0.9 * np.min(np.abs(eigs)),        # safe choice
+        unwrap_phase=False
+        )
+
         
         circ.barrier() #==============================================================
-        circ.measure(ancilla_flag_register, ancilla_flag_result)
+        circ.measure(ancilla_flag_register, ancilla_flag_result) # TODO: add support for mid-circuit measurements to postselect on ancilla flag
         
         circ.barrier() #==============================================================
         # Uncomputation
@@ -238,16 +287,16 @@ class HHL(QLSA):
         
         circ.barrier() #==============================================================
         # Eigenvalue-based rotation
-        # A common simplification is to use a constant rotation
-        # C = 1 / cond(A)
-        # angle = 2 * np.arcsin(C) # This is one approach
-        # For simplicity, let's assume a fixed rotation angle as a placeholder
-        # This part requires careful calibration based on eigenvalue estimates
-        # WARNING: This is a simplified implementation. For production use, 
-        # the rotation angles should be calculated based on the actual eigenvalues.
-        for i in range(len(qpe_register)):
-            angle = (2*np.pi) / (2**(i+1)) # Simplified rotation, not eigenvalue-dependent
-            circ.cry(angle, qpe_register[i], ancilla_flag_register[0])
+        eigs = np.linalg.eigvalsh(A)          # Hermitian → stable
+        eig_inversion_oracle(
+        circ, 
+        qpe_register, 
+        ancilla_flag_register[0], 
+        self.t0, 
+        eigs, 
+        C = 0.9 * np.min(np.abs(eigs)),        # safe choice
+        unwrap_phase=False
+        )
         
         circ.barrier() #==============================================================
         circ.measure(ancilla_flag_register, ancilla_flag_result)
