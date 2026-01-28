@@ -1,0 +1,18 @@
+cuda-quantum-cu11==0.11.0 \
+cudensitymat-cu11==0.2.0 \
+cupy-cuda11x==13.3.0 \
+cuquantum-cu11==25.6.0 \
+cuquantum-python-cu11==25.6.0 \
+custatevec-cu11==1.9.0 \
+cutensornet-cu11==2.8.0 \
+nvidia-cuda-runtime-cu11==11.8.89 \
+nvidia-cuda-nvrtc-cu11==11.8.89 \
+nvidia-cublas-cu11==11.11.3.6 \
+nvidia-curand-cu11==10.3.0.86 \
+nvidia-cusolver-cu11==11.4.1.48 \
+nvidia-cusparse-cu11==11.7.5.86 \
+cutensor-cu11==2.2.0
+
+numpy
+scipy
+matplotlib
