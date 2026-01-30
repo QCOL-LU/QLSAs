@@ -1,5 +1,5 @@
 from cudaq_qlsa.qlsa.base import QLSA
-from cudaq_qlsa.qlsa.hhl_dependencies import QFT, invQFT, A_exp_pauli, NA_exp_pauli
+from cudaq_qlsa.qlsa.hhl_dependencies import QFT, invQFT, A_exp_pauli, NA_exp_pauli, EIO, eigs_processor, ry_angle
 from cudaq_qlsa.qlsa.PauliDecompose import PauliDecomposition
 from typing import Optional
 import cudaq
@@ -75,16 +75,22 @@ class HHL(QLSA):
         coefficients = coefficients[1:]
         coefficients = [float(np.real(x)) for x in coefficients]  
 
+        # Preprocess the eigenvalues of A
+        eigs = eigs_processor(A)
+
+        # Process the angles for Controlled-RY based on eigenvalues of A
+        thetas = ry_angle(self.num_qpe_qubits, self.t0, eigs, C = 0.9 * np.min(np.abs(eigs)))
+
         if self.readout == "measure_x":
             # return self.measure_x_circuit(b, self.num_qpe_qubits, self.t0, coefficients, words)
-            return (self.measure_x_circuit, (b.tolist(), self.num_qpe_qubits, self.t0, coefficients, words))
+            return (self.measure_x_circuit, (b.tolist(), thetas, self.num_qpe_qubits, self.t0, coefficients, words))
             
         if self.readout == "resource_estimate":
             b_num = int(math.log2(len(b)))
-            return (self.resource_estimate_circuit, (b_num, self.num_qpe_qubits, self.t0, coefficients, words))
+            return (self.resource_estimate_circuit, (b_num, thetas, self.num_qpe_qubits, self.t0, coefficients, words))
 
         elif self.readout == "swap_test":
-            return (self.swap_test_circuit, (b.tolist(), self.swap_test_vector, self.num_qpe_qubits, self.t0, coefficients, words))
+            return (self.swap_test_circuit, (b.tolist(), thetas, self.swap_test_vector, self.num_qpe_qubits, self.t0, coefficients, words))
             
         else:
             raise ValueError(f"Invalid readout method: {self.readout}. Valid methods: measure_x, resource_estimate, swap_test.")
@@ -96,19 +102,23 @@ class HHL(QLSA):
         [words,coefficients] = PauliDecomposition(A)
         words = words[1:]
         coefficients = coefficients[1:]
-        coefficients = [float(np.real(x)) for x in coefficients]  
+        coefficients = [float(np.real(x)) for x in coefficients] 
+
+        eigs = eigs_processor(A)
+        thetas = ry_angle(self.num_qpe_qubits, self.t0, eigs, C = 0.9 * np.min(np.abs(eigs)))
+
         if self.readout == "measure_x":
-            print(cudaq.draw(self.measure_x_circuit, b, self.num_qpe_qubits, self.t0, coefficients, words))
+            print(cudaq.draw(self.measure_x_circuit, b, thetas, self.num_qpe_qubits, self.t0, coefficients, words))
         
         if self.readout == "resource_estimate":
             b_num = int(math.log2(len(b)))
-            print(cudaq.draw(self.resource_estimate_circuit, b_num, self.num_qpe_qubits, self.t0, coefficients, words))
+            print(cudaq.draw(self.resource_estimate_circuit, b_num, thetas,self.num_qpe_qubits, self.t0, coefficients, words))
 
         elif self.readout == "swap_test":
-            print(cudaq.draw(self.swap_test_circuit, b, self.swap_test_vector, self.num_qpe_qubits, self.t0, coefficients, words))
+            print(cudaq.draw(self.swap_test_circuit, b, thetas, self.swap_test_vector, self.num_qpe_qubits, self.t0, coefficients, words))
 
     @cudaq.kernel
-    def measure_x_circuit(b: list[float], num_qpe_qubits: int, t0:float, coefficients: list[float], words: list[cudaq.pauli_word]):
+    def measure_x_circuit(b: list[float], thetas: list[float], num_qpe_qubits: int, t0:float, coefficients: list[float], words: list[cudaq.pauli_word]):
         """
         Build the circuit for measuring the x register.
         """
@@ -133,9 +143,10 @@ class HHL(QLSA):
         QFT(qReg)
 
         # Apply y rotations on Ancilla qubit 
-        for i in range(len(qReg)):
-            # ry_angle = (2*np.pi)/(2**(i+1))
-            ry.ctrl((2*np.pi)/(2**(i+1)), qReg[i], qAnc)  
+        # for i in range(len(qReg)):
+        #     # ry_angle = (2*np.pi)/(2**(i+1))
+        #     ry.ctrl((2*np.pi)/(2**(i+1)), qReg[i], qAnc)  
+        EIO(qReg, qAnc, num_qpe_qubits, thetas)
             
         #================ Uncompute the circuit ================
         # Apply QFT
@@ -154,7 +165,7 @@ class HHL(QLSA):
         mz(bReg)
 
     @cudaq.kernel
-    def resource_estimate_circuit(b_num:int, num_qpe_qubits: int, t0:float, coefficients: list[float], words: list[cudaq.pauli_word]):
+    def resource_estimate_circuit(b_num:int, thetas: list[float], num_qpe_qubits: int, t0:float, coefficients: list[float], words: list[cudaq.pauli_word]):
         """
         Build the circuit for estimating the resources.
         """
@@ -179,9 +190,10 @@ class HHL(QLSA):
         QFT(qReg)
 
         # Apply y rotations on Ancilla qubit 
-        for i in range(len(qReg)):
-            # ry_angle = (2*np.pi)/(2**(i+1))
-            ry.ctrl((2*np.pi)/(2**(i+1)), qReg[i], qAnc)  
+        # for i in range(len(qReg)):
+        #     # ry_angle = (2*np.pi)/(2**(i+1))
+        #     ry.ctrl((2*np.pi)/(2**(i+1)), qReg[i], qAnc)  
+        EIO(qReg, qAnc, num_qpe_qubits, thetas)
             
         #================ Uncompute the circuit ================
         # Apply QFT
@@ -201,6 +213,7 @@ class HHL(QLSA):
         
     @cudaq.kernel
     def swap_test_circuit(b: list[float], 
+                          thetas: list[float],
                           swap_test_vector:list[float], 
                           num_qpe_qubits: int, 
                           t0:float, 
@@ -233,9 +246,10 @@ class HHL(QLSA):
         QFT(qReg)
 
         # Apply y rotations on Ancilla qubit 
-        for i in range(len(qReg)):
-            # ry_angle = (2*np.pi)/(2**(i+1))
-            ry.ctrl((2*np.pi)/(2**(i+1)), qReg[i], qAnc)  
+        # for i in range(len(qReg)):
+        #     # ry_angle = (2*np.pi)/(2**(i+1))
+        #     ry.ctrl((2*np.pi)/(2**(i+1)), qReg[i], qAnc)  
+        EIO(qReg, qAnc, num_qpe_qubits, thetas)
             
         #================ Uncompute the circuit ================
         # Apply QFT
