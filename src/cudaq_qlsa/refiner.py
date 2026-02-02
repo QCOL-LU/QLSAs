@@ -118,13 +118,13 @@ class Refiner:
                 nabla = min(rho * nabla, 1 / res)
             iteration += 1
             
-            final_result = {
-                'refined_x': x_post,
-                'residuals': res_list,
-                'errors': error_list,
-                'total_iterations': iteration,
-                'initial_solution': x
-            }
+        final_result = {
+            'refined_x': x_post,
+            'residuals': res_list,
+            'errors': error_list,
+            'total_iterations': iteration,
+            'initial_solution': x
+        }
 
         if plot:
             backend_label = self.solver.backend
