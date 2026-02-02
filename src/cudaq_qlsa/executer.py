@@ -16,6 +16,7 @@ class Executer:
         backend: str,
         shots: int,
         noise_model: Optional[Any] = None,
+        verbose: bool = True
     ):
         """
         Run the circuit on the backend.
@@ -40,10 +41,12 @@ class Executer:
             if backend == 'qpp-cpu':
                 warnings.warn("In order to run a noisy simulation on CPU, change the backend to density-matrix-cpu. The backend qpp-cpu returns a noiseless simulation.")
             else:
-                print(f'Noisy simulation underway ...')
+                if verbose:
+                    print(f'Noisy simulation underway ...')
                 return self.run_cudaq(kernel, args, shots, noise_model)
         else:
-            print(f'Noiseless simulation underway ...')
+            if verbose:
+                print(f'Noiseless simulation underway ...')
             return self.run_cudaq(kernel, args, shots)
 
     

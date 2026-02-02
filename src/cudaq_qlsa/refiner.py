@@ -17,6 +17,7 @@ class Refiner:
     def refine(self,
         precision: float,
         max_iter: int,
+        verbose: bool = True,
         plot: bool = True
     ) -> dict:
         """
@@ -68,12 +69,14 @@ class Refiner:
     
         error_list.append(LA.norm(csol - x_post)) # both normalized
         res_list.append(LA.norm(r))
-        print(f"Initial residual: {res_list[0]:.4f}, Initial error: {error_list[0]:.4f}\n")
+        if verbose:
+            print(f"Initial residual: {res_list[0]:.4f}, Initial error: {error_list[0]:.4f}\n")
     
         iteration = 1
     
         while (LA.norm(r) > precision and iteration <= max_iter):
-            print(f"IR Iteration: {iteration}")
+            if verbose:
+                print(f"IR Iteration: {iteration}")
             new_r = nabla*r
 
             A_normalized = A / LA.norm(new_r)
@@ -91,7 +94,8 @@ class Refiner:
             x_newpost = x_new * LA.norm(csol_ir)
                     
             sys_res = LA.norm(new_r - A*x_newpost)
-            print(f"  IR System residual: {sys_res:.4f}")
+            if verbose:
+                print(f"  IR System residual: {sys_res:.4f}")
             
             x_post = x_post + (1/nabla)*x_newpost                             # Updating solution
             x_normalized = x_post/LA.norm(x_post)
@@ -103,9 +107,10 @@ class Refiner:
             res = LA.norm(r)
             error_list.append(err)
             res_list.append(res)
-            
-            print(f"  residual: {res:.2e}, error: {err:.2e}")
-            print(".............................................................")
+
+            if verbose:
+                print(f"  residual: {res:.2e}, error: {err:.2e}")
+                print(".............................................................")
             
             if res < 1e-9:
                 nabla *= rho
