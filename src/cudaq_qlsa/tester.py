@@ -11,6 +11,7 @@ import time
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 
+import warnings
 from typing import Any, Optional
 
 class Tester:
@@ -44,9 +45,12 @@ class Tester:
                  precision: float, 
                  max_iter: int, 
                  plot: bool = True) -> dict:
+        
         if self.noisemodel == None:
+            print('Noiseless Experiment!')
             targets = ["qpp-cpu", "nvidia"]
         else: 
+            print('Noisy Experiment!')
             targets = ["density-matrix-cpu", "nvidia"]
 
         time_dict = {}
@@ -102,7 +106,10 @@ class Tester:
             plt.xlabel('Instance')
             plt.ylabel('Time (seconds)')
             plt.xticks(range(0,len(time_dict['nvidia']),1 if len(time_dict['nvidia']) < 1000 else 1000))
-            plt.title(f'Runtime Comparison on LSE size {self.problem_size} (GPU vs. DMCPU)')
+            if self.noisemodel == None:
+                plt.title(f'Runtime Comparison on LSE size {self.problem_size} (GPU vs. QPP-CPU)')
+            else:
+                plt.title(f'Runtime Comparison on LSE size {self.problem_size} (GPU vs. DMCPU)')
             plt.grid(True)
             plt.legend()
             # plt.savefig(f'Time Comparison size {self.problem_size}-GPUvsDMCPU.png')
@@ -132,16 +139,21 @@ class Tester:
                 backend: str,
                 plot: bool = True
                 ) -> dict:
+
+        if backend == 'qpp-cpu' and self.noisemodel:
+            raise ValueError("qpp-cpu is selected on a noisy simulation. Switch to density-matrix-cpu for a noisy simulation on CPU.")
+        if backend == 'density-matrix-cpu' and self.noisemodel == None:
+            warnings.warn("density-matrix-cpu is selected on a noiseless simulation. Switch to qpp-cpu for a noiseless simulation on CPU.")
         
         residual_data = np.zeros((max_qpe_qubit, max_IR_iter+1))
 
         ## Generate a problem
         # -> Call HHL
-        # if self.problem == None:
-        problem = generate_problem(n=self.problem_size, cond_number=5.0, sparsity=0.5, seed=0)
-        A, b = problem["A"], problem["b"]
-        # else:
-        #     A, b = self.problem["A"], self.problem["b"]
+        if self.problem == None:
+            problem = generate_problem(n=self.problem_size, cond_number=5.0, sparsity=0.5, seed=0)
+            A, b = problem["A"], problem["b"]
+        else:
+            A, b = self.problem[0]["A"], self.problem[0]["b"]
 
         A = A / np.linalg.norm(b)
         b = b / np.linalg.norm(b)
@@ -207,6 +219,11 @@ class Tester:
                   plot: bool = True
                   ) -> dict:
 
+        if backend == 'qpp-cpu' and self.noisemodel:
+            raise ValueError("qpp-cpu is selected on a noisy simulation. Switch to density-matrix-cpu for a noisy simulation on CPU.")
+        if backend == 'density-matrix-cpu' and self.noisemodel == None:
+            warnings.warn("density-matrix-cpu is selected on a noiseless simulation. Switch to qpp-cpu for a noiseless simulation on CPU.")
+            
         shots_data = np.zeros((len(shots_list), 1))
         IR_data = {}
         for maxiter in max_IR_iter_list:
@@ -215,11 +232,11 @@ class Tester:
 
         ## Generate a problem
         # -> Call HHL
-        # if self.problem == None:
-        problem = generate_problem(n=self.problem_size, cond_number=5.0, sparsity=0.5, seed=0)
-        A, b = problem["A"], problem["b"]
-        # else:
-        #     A, b = self.problem["A"], self.problem["b"]
+        if self.problem == None:
+            problem = generate_problem(n=self.problem_size, cond_number=5.0, sparsity=0.5, seed=0)
+            A, b = problem["A"], problem["b"]
+        else:
+            A, b = self.problem[0]["A"], self.problem[0]["b"]
 
         A = A / np.linalg.norm(b)
         b = b / np.linalg.norm(b)
@@ -262,8 +279,8 @@ class Tester:
 
         else:
             shots_data = np.zeros((len(shots_list), max_IR_iter_list[0]+1))   
-            index = shots_list.index(shots)
-            for shots in shots_list:      
+            for shots in shots_list:    
+                index = shots_list.index(shots)
                 # Create the solver 
                 # -> Call QuantumLinearSolver
                 hhl_solver = QuantumLinearSolver(
@@ -312,7 +329,8 @@ class Tester:
                 plt.title(f"{self.problem_size}x{self.problem_size} System")
 
                 plt.xticks(np.arange(data.shape[1]))
-                plt.yticks(np.arange(data.shape[0]), labels=np.arange(1, data.shape[0]+1))
+                # plt.yticks(np.arange(data.shape[0]), labels=np.arange(1, data.shape[0]+1))
+                plt.yticks(np.arange(data.shape[0]), labels=shots_list)
 
                 # Reverse y-axis so that 1 is at the bottom
                 plt.gca().invert_yaxis()
