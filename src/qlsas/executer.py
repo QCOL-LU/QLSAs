@@ -20,7 +20,8 @@ class Executer:
         transpiled_circuit: Union[QuantumCircuit, Circuit],
         backend: Union[BackendV1, BackendV2, QuantinuumConfig],
         shots: int,
-        mode: Optional[str] = None
+        mode: Optional[str] = None,
+        verbose: bool = True
     ) -> Any:
         """
         Run the circuit on the backend.
@@ -29,13 +30,14 @@ class Executer:
             backend: The backend to execute the circuit on.
             shots: The number of shots to run.
             mode: The mode to run the job in. Job (for single qlsa run) or Session (for iterative refinement).
+            verbose: Whether to print job status and ID.
         Returns:
             A result object containing the result of the execution.
         """
         if isinstance(backend, (BackendV1, BackendV2, IBMBackend)):
-            return self.run_qiskit(transpiled_circuit, backend, shots, mode=mode)
+            return self.run_qiskit(transpiled_circuit, backend, shots, mode=mode, verbose=verbose)
         elif isinstance(backend, QuantinuumConfig):
-            return self.run_qnexus(transpiled_circuit, backend, shots, mode=mode)
+            return self.run_qnexus(transpiled_circuit, backend, shots, mode=mode, verbose=verbose)
         else:
             raise ValueError(f"Invalid backend type: {type(backend)}")
 
@@ -44,7 +46,8 @@ class Executer:
         transpiled_circuit: QuantumCircuit, 
         backend: Union[BackendV1, BackendV2], 
         shots: int,
-        mode: Optional[str] = None
+        mode: Optional[str] = None,
+        verbose: bool = True
     ) -> Any:
         """
         Run the circuit on the qiskit backend.
@@ -53,8 +56,9 @@ class Executer:
             sampler = Sampler(mode=backend) # TODO generalize modes to batch or session when using iterative refinement
             job = sampler.run([transpiled_circuit], shots = shots)
             job_id = job.job_id()
-            print(f">>> Job ID: {job_id}")
-            self._wait_for_qiskit_job(job, poll_interval_s=5)
+            if verbose:
+                print(f">>> Job ID: {job_id}")
+            self._wait_for_qiskit_job(job, poll_interval_s=5, verbose=verbose)
 
             result = job.result()[0]
             return result
@@ -62,7 +66,7 @@ class Executer:
         else: # iterative refinement run
             raise ValueError(f"mode {mode} not implemented yet.")
 
-    def _wait_for_qiskit_job(self, job: Any, poll_interval_s: float = 5) -> str:
+    def _wait_for_qiskit_job(self, job: Any, poll_interval_s: float = 5, verbose: bool = True) -> str:
         """
         Poll a Qiskit job until it reaches a terminal status, printing a single
         status line that updates in-place.
@@ -76,18 +80,20 @@ class Executer:
         status = job.status()
         last_len = 0
         while status_name(status) not in terminal_state_names:
-            msg = f">>> Job Status: {status_name(status)}..."
-            pad = " " * max(0, last_len - len(msg))
-            print(f"\r{msg}{pad}", end="", flush=True)
-            last_len = len(msg)
+            if verbose:
+                msg = f">>> Job Status: {status_name(status)}..."
+                pad = " " * max(0, last_len - len(msg))
+                print(f"\r{msg}{pad}", end="", flush=True)
+                last_len = len(msg)
             time.sleep(poll_interval_s)
             status = job.status()
 
         # Final status (finish the line with a newline)
         final_status = status_name(status)
-        msg = f">>> Job Status: {final_status}"
-        pad = " " * max(0, last_len - len(msg))
-        print(f"\r{msg}{pad}", flush=True)
+        if verbose:
+            msg = f">>> Job Status: {final_status}"
+            pad = " " * max(0, last_len - len(msg))
+            print(f"\r{msg}{pad}", flush=True)
         return final_status
 
     def run_qnexus(
@@ -95,7 +101,8 @@ class Executer:
         transpiled_circuit: Circuit, 
         backend: QuantinuumConfig, 
         shots: int,
-        mode: Optional[str] = None
+        mode: Optional[str] = None,
+        verbose: bool = True
     ) -> dict:
         """
         Run the circuit on the qnexus backend.

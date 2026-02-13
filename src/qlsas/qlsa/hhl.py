@@ -172,18 +172,6 @@ class HHL(QLSA):
         
         circ.barrier() #==============================================================
         # Eigenvalue-based rotation
-        # A common simplification is to use a constant rotation
-        # C = 1 / cond(A)
-        # angle = 2 * np.arcsin(C) # This is one approach
-        # for i in range(len(qpe_register)):
-        #     #angle = (2*np.pi) / (2**(i+1)) # Simplified rotation, not eigenvalue-dependent
-        #     circ.cry(angle, qpe_register[i], ancilla_flag_register[0])
-        
-        # eigs = np.linalg.eigvals(A)
-        # for i in range(1, len(qpe_register) + 1):
-        #     U = RYGate((2*np.pi)/eigs[i-1]).control(1)  # or 2**(len(q_reg)+1-i) factor?
-        #     circ.append(U, [i, 0])
-
         eigs = np.linalg.eigvalsh(A)          # Hermitian → stable
         eig_inversion_oracle(
         circ, 

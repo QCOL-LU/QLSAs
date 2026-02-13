@@ -18,7 +18,8 @@ class Refiner:
     def refine(self,
         precision: float,
         max_iter: int,
-        plot: bool = True
+        plot: bool = True,
+        verbose: bool = True
     ) -> dict:
         """
         Iterative Refinement for quantum linear solver.
@@ -50,11 +51,12 @@ class Refiner:
 
         # terminition conditions
         while (LA.norm(r) > precision and iteration <= max_iter):
-            print(f"IR Iteration: {iteration}")
+            if verbose:
+                print(f"IR Iteration: {iteration}")
             new_r             = nabla * r
             A_normalized      = A / LA.norm(new_r)
             new_r_normalized  = new_r / LA.norm(new_r)
-            new_x             = self.solver.solve(A_normalized, new_r_normalized) # quantum linear solver result
+            new_x             = self.solver.solve(A_normalized, new_r_normalized, verbose=verbose) # quantum linear solver result
             alpha             = self.norm_estimation(A, new_r, new_x)
             x                += (alpha / nabla) * new_x # scale x by norm of csol
             x_list.append(x) # append new solution to list
@@ -67,8 +69,9 @@ class Refiner:
             error_list.append(err)
             res_list.append(res)
             
-            print(f"  residual: {res:.4f}, error: {err:.4f}, alpha: {alpha:.4f}")
-            print()
+            if verbose:
+                print(f"  residual: {res:.4f}, error: {err:.4f}, alpha: {alpha:.4f}")
+                print()
 
             if res < 1e-9:
                 nabla *= rho
