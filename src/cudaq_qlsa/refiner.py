@@ -52,7 +52,7 @@ class Refiner:
         # Obtaining initial solution
         assert np.isclose(LA.norm(r), 1, atol=1e-10), f"r(b) is not normalized: {LA.norm(r)}"
         A_normalized = A / LA.norm(r)
-        x = self.solver.solve(A_normalized, r)
+        x, _ , _ = self.solver.solve(A_normalized, r)
 
         for idx in range(len(csol)):
             if np.sign(csol[idx]) != np.sign(x[idx]):
@@ -82,7 +82,7 @@ class Refiner:
             A_normalized = A / LA.norm(new_r)
             new_r_normalized = new_r / LA.norm(new_r)
 
-            x_new = self.solver.solve(A_normalized, new_r_normalized)
+            x_new, _ , _ = self.solver.solve(A_normalized, new_r_normalized)
 
             csol_ir = LA.solve(A, new_r)
             csol_ir_normalized = csol_ir / LA.norm(csol_ir)

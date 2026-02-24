@@ -34,6 +34,17 @@ class QuantumLinearSolver:
     def solve(self, A: np.ndarray, b: np.ndarray) -> np.ndarray:
         """Run the full workflow and return the (post-processed) solution vector."""
         kernel, args = self.qlsa.build_circuit(A, b)
-    
-        result = self.executer.run(kernel, args, self.backend, self.shots, self.noise_model, self.verbose)
-        return self.post_processor.process(result, A, b)
+
+        if self.qlsa.readout == "measure_x":
+            result = self.executer.run(kernel, args, self.backend, self.shots, self.noise_model, self.verbose)
+            return self.post_processor.process(result, self.qlsa.readout, A, b)                                         # Adrian's imp. returns element at [0]
+
+        elif self.qlsa.readout == "swap_test":
+            result = self.executer.run(kernel, args, self.backend, self.shots, self.noise_model, self.verbose)
+            return self.post_processor.process(result, self.qlsa.readout, A, b, self.qlsa.swap_test_vector)             # Adrian's imp. returns element at [0]
+        
+        else:
+            raise ValueError(f"Invalid readout method: {self.qlsa.readout}.  Must be 'measure_x' or 'swap_test'.")        
+
+    def solve_until_successful_shots(self, A: np.ndarray, b: np.ndarray) -> np.ndarray:
+        pass
