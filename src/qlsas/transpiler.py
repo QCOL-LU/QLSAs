@@ -1,7 +1,7 @@
 from qiskit import QuantumCircuit
 from qiskit_ibm_runtime import IBMBackend
 from qiskit_aer import AerSimulator
-from qiskit.providers.backend import BackendV1, BackendV2
+from qiskit.providers.backend import BackendV2
 from qiskit.transpiler import generate_preset_pass_manager
 from qnexus import QuantinuumConfig
 from pytket.circuit import Circuit
@@ -18,7 +18,7 @@ class Transpiler:
     def __init__(
         self,
         circuit: Union[QuantumCircuit, Circuit],
-        backend: Union[BackendV1, BackendV2, QuantinuumConfig],
+        backend: Union[BackendV2, QuantinuumConfig],
         optimization_level: int,
     ):
         self.circuit = circuit
@@ -34,7 +34,7 @@ class Transpiler:
         Returns:
             The optimized circuit.
         """
-        if isinstance(self.backend, (BackendV1, BackendV2, IBMBackend, AerSimulator)):
+        if isinstance(self.backend, (BackendV2, IBMBackend, AerSimulator)):
             return self.optimize_qiskit()
         elif isinstance(self.backend, QuantinuumConfig):
             return self.optimize_qnexus()

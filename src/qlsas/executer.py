@@ -1,7 +1,7 @@
 from qiskit import QuantumCircuit
 from qiskit_ibm_runtime import IBMBackend
 from qiskit_ibm_runtime import QiskitRuntimeService, SamplerV2 as Sampler, Session
-from qiskit.providers.backend import BackendV1, BackendV2
+from qiskit.providers.backend import BackendV2
 from qiskit.providers.jobstatus import JobStatus
 from qnexus import QuantinuumConfig
 from pytket.circuit import Circuit
@@ -18,7 +18,7 @@ class Executer:
     def run(
         self, 
         transpiled_circuit: Union[QuantumCircuit, Circuit],
-        backend: Union[BackendV1, BackendV2, QuantinuumConfig],
+        backend: Union[BackendV2, QuantinuumConfig],
         shots: int,
         mode: Optional[str] = None,
         verbose: bool = True
@@ -34,7 +34,7 @@ class Executer:
         Returns:
             A result object containing the result of the execution.
         """
-        if isinstance(backend, (BackendV1, BackendV2, IBMBackend)):
+        if isinstance(backend, (BackendV2, IBMBackend)):
             return self.run_qiskit(transpiled_circuit, backend, shots, mode=mode, verbose=verbose)
         elif isinstance(backend, QuantinuumConfig):
             return self.run_qnexus(transpiled_circuit, backend, shots, mode=mode, verbose=verbose)
@@ -44,7 +44,7 @@ class Executer:
     def run_qiskit(
         self, 
         transpiled_circuit: QuantumCircuit, 
-        backend: Union[BackendV1, BackendV2], 
+        backend: BackendV2, 
         shots: int,
         mode: Optional[str] = None,
         verbose: bool = True

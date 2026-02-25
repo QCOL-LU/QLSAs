@@ -48,6 +48,7 @@ class Refiner:
         res_list              = []             # residual list
         error_list            = []             # error list
         x_list                = []             # solution list
+        circuit_list          = []             # transpiled circuits per iteration
 
         # terminition conditions
         while (LA.norm(r) > precision and iteration <= max_iter):
@@ -57,6 +58,7 @@ class Refiner:
             A_normalized      = A / LA.norm(new_r)
             new_r_normalized  = new_r / LA.norm(new_r)
             new_x             = self.solver.solve(A_normalized, new_r_normalized, verbose=verbose) # quantum linear solver result
+            circuit_list.append(self.solver.transpiled_circuit)
             alpha             = self.norm_estimation(A, new_r, new_x)
             x                += (alpha / nabla) * new_x # scale x by norm of csol
             x_list.append(x) # append new solution to list
@@ -84,7 +86,8 @@ class Refiner:
             'residuals': res_list,
             'errors': error_list,
             'total_iterations': iteration - 1,
-            'initial_solution': x_list[0]
+            'initial_solution': x_list[0],
+            'transpiled_circuits': circuit_list,
         }
 
         if plot:

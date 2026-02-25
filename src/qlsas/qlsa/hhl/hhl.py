@@ -2,46 +2,13 @@ from qlsas.qlsa.base import QLSA
 from typing import Optional
 import warnings
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
-from qiskit.circuit.library import Initialize, RYGate, HamiltonianGate, QFT
+from qiskit.circuit.library import HamiltonianGate, QFT
 import numpy as np
 import math
 from numpy.linalg import cond
 from qlsas.data_loader import StatePrep
+from qlsas.qlsa.hhl.hhl_helpers import classical_eig_inversion_oracle
 
-
-def eig_inversion_oracle(
-    circ,
-    qpe_register,
-    ancilla_qubit,
-    t0: float,
-    eigs: np.ndarray,
-    C: float,
-    unwrap_phase: bool = False,
-    lam_floor: float = 1e-12,
-):
-    m = len(qpe_register)
-    eigs = np.real_if_close(eigs)
-    eigs = np.real(eigs)
-    eigs = np.sort(np.abs(eigs))  # SPD-friendly
-    eigs[eigs < lam_floor] = lam_floor
-
-    for k in range(2**m):
-        phi = k / (2**m)
-        if unwrap_phase and phi >= 0.5:
-            phi -= 1.0
-        lam_est = abs((2*np.pi*phi) / t0)
-        lam_est = max(lam_est, lam_floor)
-
-        # near-term solution: snap phase-bin estimate to nearest true eigenvalue
-        lam = eigs[np.argmin(np.abs(eigs - lam_est))]
-
-        ratio = C / lam
-        ratio = min(max(ratio, 0.0), 1.0)
-        theta = 2*np.arcsin(ratio)
-
-        ctrl_state = format(k, f"0{m}b")
-        mc_ry = RYGate(theta).control(m, ctrl_state=ctrl_state)
-        circ.append(mc_ry, list(qpe_register) + [ancilla_qubit])
 
 class HHL(QLSA):
     def __init__(
@@ -173,7 +140,7 @@ class HHL(QLSA):
         circ.barrier() #==============================================================
         # Eigenvalue-based rotation
         eigs = np.linalg.eigvalsh(A)          # Hermitian → stable
-        eig_inversion_oracle(
+        classical_eig_inversion_oracle(
         circ, 
         qpe_register, 
         ancilla_flag_register[0], 
@@ -276,7 +243,7 @@ class HHL(QLSA):
         circ.barrier() #==============================================================
         # Eigenvalue-based rotation
         eigs = np.linalg.eigvalsh(A)          # Hermitian → stable
-        eig_inversion_oracle(
+        classical_eig_inversion_oracle(
         circ, 
         qpe_register, 
         ancilla_flag_register[0], 

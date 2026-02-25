@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import Optional, Union
 
 import numpy as np
-from qiskit.providers.backend import BackendV1, BackendV2
+from qiskit.providers.backend import BackendV2
 from qnexus import QuantinuumConfig
 
 from qlsas.executer import Executer
@@ -19,7 +19,7 @@ class QuantumLinearSolver:
     def __init__(
         self,
         qlsa: QLSA,
-        backend: Union[BackendV1, BackendV2, QuantinuumConfig],
+        backend: Union[BackendV2, QuantinuumConfig],
         *,
         shots: int = 1024,
         target_successful_shots: Optional[int] = None,
@@ -43,17 +43,17 @@ class QuantumLinearSolver:
 
     def solve(self, A: np.ndarray, b: np.ndarray, verbose: bool = True) -> np.ndarray:
         """Run the full workflow and return the (post-processed) solution vector."""
-        circuit = self.qlsa.build_circuit(A, b)
+        self.circuit = self.qlsa.build_circuit(A, b)
 
         transpiler = Transpiler(
-            circuit=circuit,
+            circuit=self.circuit,
             backend=self.backend,
             optimization_level=self.optimization_level,
         )
-        transpiled_circuit = transpiler.optimize()
+        self.transpiled_circuit = transpiler.optimize()
 
         if self.qlsa.readout == "swap_test":
-            result = self.executer.run(transpiled_circuit, self.backend, self.shots, verbose=verbose)
+            result = self.executer.run(self.transpiled_circuit, self.backend, self.shots, verbose=verbose)
             return self.post_processor.process_swap_test(
                 result, A, b, self.qlsa.swap_test_vector
             )[0]
@@ -64,13 +64,13 @@ class QuantumLinearSolver:
             )
 
         if self.target_successful_shots is not None:
-            return self._solve_until_successful_shots(transpiled_circuit, A, b)
+            return self._solve_until_successful_shots(self.transpiled_circuit, A, b, verbose=verbose)
 
-        result = self.executer.run(transpiled_circuit, self.backend, self.shots, verbose=verbose)
+        result = self.executer.run(self.transpiled_circuit, self.backend, self.shots, verbose=verbose)
         return self.post_processor.process_tomography(result, A, b, verbose=verbose)[0]
 
     def _solve_until_successful_shots(
-        self, transpiled_circuit, A: np.ndarray, b: np.ndarray
+        self, transpiled_circuit, A: np.ndarray, b: np.ndarray, verbose: bool = True
     ) -> np.ndarray:
         """Run batches of shots until we have at least target_successful_shots with ancilla=1."""
         accumulated: dict[str, int] = defaultdict(int)
@@ -79,7 +79,7 @@ class QuantumLinearSolver:
         batch_size = self.shots_per_batch
 
         while True:
-            result = self.executer.run(transpiled_circuit, self.backend, batch_size)
+            result = self.executer.run(transpiled_circuit, self.backend, batch_size, verbose=verbose)
             joined = result.join_data(names=["ancilla_flag_result", "x_result"])
             counts = joined.get_counts()
 
