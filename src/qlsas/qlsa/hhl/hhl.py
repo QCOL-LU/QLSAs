@@ -7,7 +7,7 @@ import numpy as np
 import math
 from numpy.linalg import cond
 from qlsas.data_loader import StatePrep
-from qlsas.qlsa.hhl.hhl_helpers import classical_eig_inversion_oracle
+from qlsas.qlsa.hhl.hhl_helpers import classical_eig_inversion_oracle, quantum_eig_inversion_oracle, dynamic_t0, C_factor
 
 
 class HHL(QLSA):
@@ -16,34 +16,39 @@ class HHL(QLSA):
         state_prep: StatePrep,
         readout: str,
         num_qpe_qubits: int,
-        t0: float,
-        swap_test_vector: Optional[np.ndarray] = None
+        swap_test_vector: Optional[np.ndarray] = None,
+        eig_oracle: str = "classical",
     ):
     # TODO: add all attributes as args to the build_circuit method instead of initializing the class
         """
         Initialize the HHL QLSA.
         Args:
-            A: The matrix representing the linear system.
-            b: The vector representing the right-hand side of the linear system.
             state_prep: The state preparation method to use with load_state().
             readout: The readout method to use. Should be either 'measure_x' or 'swap_test'.
             num_qpe_qubits: The number of qubits to use for the QPE.
-            t0: The time parameter used in the controlled-Hamiltonian operations.
             swap_test_vector: The vector to use for the swap test. Only used if readout is 'swap_test'.
+            eig_oracle: The eigenvalue inversion oracle to use. Either 'classical' (default) or
+                'quantum'. The classical oracle uses classically computed eigenvalues to construct
+                controlled-RY rotations; the quantum oracle uses Qiskit's ExactReciprocalGate.
         """
         
         super().__init__()
         self.state_prep = state_prep
         self.readout = readout
         self.num_qpe_qubits = num_qpe_qubits
-        self.t0 = t0
         self.swap_test_vector = swap_test_vector
+        self.eig_oracle = eig_oracle
 
     
-    def build_circuit(self, A: np.ndarray, b: np.ndarray) -> QuantumCircuit:
+    def build_circuit(self, A: np.ndarray, b: np.ndarray, t0: Optional[float] = None, C: Optional[float] = None) -> QuantumCircuit:
         """
         Compose the HHL circuit out of the state preparation circuit, the QLSA, and the readout circuit.
         Either calls measure_x_circuit or swap_test_circuit, depending on the readout method.
+        Args:
+            A: The matrix representing the linear system.
+            b: The vector representing the right-hand side of the linear system.
+            t0: The time parameter used in the controlled-Hamiltonian operations.
+            C: The scaling factor used in the controlled-Hamiltonian operations.
 
         Returns:
             QuantumCircuit: The composed HHL circuit.
@@ -52,6 +57,8 @@ class HHL(QLSA):
         # Check if readout method is valid
         if self.readout not in ("measure_x", "swap_test"):
             raise ValueError("readout must be either 'measure_x' or 'swap_test'")
+        if self.eig_oracle not in ("classical", "quantum"):
+            raise ValueError("eig_oracle must be either 'classical' or 'quantum'")
         if self.readout == "swap_test" and self.swap_test_vector is None:
             raise ValueError("swap_test requires `swap_test_vector`.")
         if self.readout == "measure_x" and self.swap_test_vector is not None:
@@ -73,6 +80,17 @@ class HHL(QLSA):
         if not np.isclose(np.linalg.norm(b), 1):
             raise ValueError(f"b should have unit norm, instead has norm: {np.linalg.norm(b)}")
 
+        # Dynamically calculate t0 and C factor for the HHL circuit
+        if t0 is None:
+            self.t0 = dynamic_t0(A)
+        else:
+            self.t0 = t0
+        if C is None:
+            self.C = C_factor(A)
+        else:
+            self.C = C
+
+        # Build circuit based on readout method
         if self.readout == "measure_x":
             return self.measure_x_circuit(A, b)
 
@@ -81,6 +99,26 @@ class HHL(QLSA):
 
         else:
             raise ValueError(f"Invalid readout method: {self.readout}")
+
+
+    def _apply_eig_oracle(
+        self,
+        circ: QuantumCircuit,
+        qpe_register: QuantumRegister,
+        ancilla_qubit,
+        A: np.ndarray,
+    ) -> None:
+        """Dispatch to the selected eigenvalue inversion oracle."""
+        if self.eig_oracle == "classical":
+            classical_eig_inversion_oracle(
+                circ, qpe_register, ancilla_qubit,
+                A=A, t0=self.t0, C=self.C,
+            )
+        elif self.eig_oracle == "quantum":
+            quantum_eig_inversion_oracle(
+                circ, qpe_register, ancilla_qubit,
+                A=A, t0=self.t0, C=self.C,
+            )
 
 
     def measure_x_circuit(self, A: np.ndarray, b: np.ndarray) -> QuantumCircuit:
@@ -139,18 +177,8 @@ class HHL(QLSA):
         
         circ.barrier() #==============================================================
         # Eigenvalue-based rotation
-        eigs = np.linalg.eigvalsh(A)          # Hermitian → stable
-        classical_eig_inversion_oracle(
-        circ, 
-        qpe_register, 
-        ancilla_flag_register[0], 
-        self.t0, 
-        eigs, 
-        C = 0.9 * np.min(np.abs(eigs)),        # safe choice
-        unwrap_phase=False
-        )
+        self._apply_eig_oracle(circ, qpe_register, ancilla_flag_register[0], A)
 
-        
         circ.barrier() #==============================================================
         circ.measure(ancilla_flag_register, ancilla_flag_result) # TODO: add support for mid-circuit measurements to postselect on ancilla flag
         
@@ -242,17 +270,8 @@ class HHL(QLSA):
         
         circ.barrier() #==============================================================
         # Eigenvalue-based rotation
-        eigs = np.linalg.eigvalsh(A)          # Hermitian → stable
-        classical_eig_inversion_oracle(
-        circ, 
-        qpe_register, 
-        ancilla_flag_register[0], 
-        self.t0, 
-        eigs, 
-        C = 0.9 * np.min(np.abs(eigs)),        # safe choice
-        unwrap_phase=False
-        )
-        
+        self._apply_eig_oracle(circ, qpe_register, ancilla_flag_register[0], A)
+
         circ.barrier() #==============================================================
         circ.measure(ancilla_flag_register, ancilla_flag_result)
         

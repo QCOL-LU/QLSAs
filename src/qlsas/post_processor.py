@@ -108,7 +108,7 @@ class Post_Processor:
         Returns (solution, success_rate, residual).
         """
         # extract signs of each solution coordinate, using classical solution for now (to be updated)
-        classical_solution = LA.solve(A / LA.norm(b), b / LA.norm(b))
+        classical_solution = LA.solve(A, b)
         for i in range(len(approximate_solution)):
             approximate_solution[i] = approximate_solution[i] * np.sign(classical_solution[i])
 
@@ -118,16 +118,10 @@ class Post_Processor:
             atol=1e-6,
         ), "Approximate solution is not normalized."
 
-        # calculate residual
-        sol_norm = np.linalg.norm(approximate_solution)
-        if sol_norm == 0:
-            residual = np.nan
-        else:
-            approximate_solution = approximate_solution / sol_norm
-            # Scale the normalized solution to minimize the residual
-            scaling_factor = self.norm_estimation(A, b, approximate_solution)
-            scaled_solution = approximate_solution * scaling_factor
-            residual = np.linalg.norm(b - A @ scaled_solution)
+        # Scale the normalized solution to minimize the residual
+        scaling_factor = self.norm_estimation(A, b, approximate_solution)
+        scaled_solution = approximate_solution * scaling_factor
+        residual = np.linalg.norm(b - A @ scaled_solution)
         return approximate_solution, success_rate, residual
 
     def process_qiskit_tomography(

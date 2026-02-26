@@ -1,3 +1,5 @@
+from typing import Optional
+
 from qlsas.solver import QuantumLinearSolver
 import numpy as np
 import matplotlib.pyplot as plt
@@ -19,18 +21,19 @@ class Refiner:
         precision: float,
         max_iter: int,
         plot: bool = True,
-        verbose: bool = True
+        verbose: bool = True,
+        t0: Optional[float] = None,
+        C: Optional[float] = None,
     ) -> dict:
         """
         Iterative Refinement for quantum linear solver.
         Args:
-            A: Matrix
-            b: Vector
-            precision: float
-            max_iter: int
-            backend: Backend name or AerSimulator
-            noisy: bool, optional. If True, enables noisy simulation (default True)
-            n_qpe_qubits: int. Number of QPE qubits.
+            precision: Target residual norm for convergence.
+            max_iter: Maximum number of IR iterations.
+            plot: If True, plot residuals and errors vs iteration.
+            verbose: If True, print progress per iteration.
+            t0: Optional time parameter for HHL controlled-Hamiltonian (passed to solver).
+            C: Optional scaling factor for HHL controlled-Hamiltonian (passed to solver).
         Returns:
             dict with refined solution, residuals, errors, etc.
         """
@@ -42,7 +45,6 @@ class Refiner:
         iteration             = 0              # iteration counter
         x                     = np.zeros(d)    # solution
         r                     = b              # residual
-        con                   = LA.cond(A)     # condition number
         csol                  = LA.solve(A, b) # classical solution
         csol_normalized       = csol / LA.norm(csol)
         res_list              = []             # residual list
@@ -57,7 +59,7 @@ class Refiner:
             new_r             = nabla * r
             A_normalized      = A / LA.norm(new_r)
             new_r_normalized  = new_r / LA.norm(new_r)
-            new_x             = self.solver.solve(A_normalized, new_r_normalized, verbose=verbose) # quantum linear solver result
+            new_x             = self.solver.solve(A_normalized, new_r_normalized, verbose=verbose, t0=t0, C=C) # quantum linear solver result
             circuit_list.append(self.solver.transpiled_circuit)
             alpha             = self.norm_estimation(A, new_r, new_x)
             x                += (alpha / nabla) * new_x # scale x by norm of csol
@@ -85,7 +87,7 @@ class Refiner:
             'refined_x': x,
             'residuals': res_list,
             'errors': error_list,
-            'total_iterations': iteration - 1,
+            'total_iterations': iteration,
             'initial_solution': x_list[0],
             'transpiled_circuits': circuit_list,
         }

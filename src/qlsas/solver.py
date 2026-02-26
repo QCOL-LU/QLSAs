@@ -41,9 +41,9 @@ class QuantumLinearSolver:
         self.post_processor = post_processor or Post_Processor()
         self.mode = mode
 
-    def solve(self, A: np.ndarray, b: np.ndarray, verbose: bool = True) -> np.ndarray:
+    def solve(self, A: np.ndarray, b: np.ndarray, verbose: bool = True, t0: Optional[float] = None, C: Optional[float] = None) -> np.ndarray:
         """Run the full workflow and return the (post-processed) solution vector."""
-        self.circuit = self.qlsa.build_circuit(A, b)
+        self.circuit = self.qlsa.build_circuit(A, b, t0=t0, C=C)
 
         transpiler = Transpiler(
             circuit=self.circuit,
@@ -53,7 +53,7 @@ class QuantumLinearSolver:
         self.transpiled_circuit = transpiler.optimize()
 
         if self.qlsa.readout == "swap_test":
-            result = self.executer.run(self.transpiled_circuit, self.backend, self.shots, verbose=verbose)
+            result = self.executer.run(self.transpiled_circuit, self.backend, self.shots, mode=self.mode, verbose=verbose)
             return self.post_processor.process_swap_test(
                 result, A, b, self.qlsa.swap_test_vector
             )[0]
@@ -66,7 +66,7 @@ class QuantumLinearSolver:
         if self.target_successful_shots is not None:
             return self._solve_until_successful_shots(self.transpiled_circuit, A, b, verbose=verbose)
 
-        result = self.executer.run(self.transpiled_circuit, self.backend, self.shots, verbose=verbose)
+        result = self.executer.run(self.transpiled_circuit, self.backend, self.shots, mode=self.mode, verbose=verbose)
         return self.post_processor.process_tomography(result, A, b, verbose=verbose)[0]
 
     def _solve_until_successful_shots(
@@ -79,7 +79,7 @@ class QuantumLinearSolver:
         batch_size = self.shots_per_batch
 
         while True:
-            result = self.executer.run(transpiled_circuit, self.backend, batch_size, verbose=verbose)
+            result = self.executer.run(transpiled_circuit, self.backend, batch_size, mode=self.mode, verbose=verbose)
             joined = result.join_data(names=["ancilla_flag_result", "x_result"])
             counts = joined.get_counts()
 
