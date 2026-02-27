@@ -1,6 +1,7 @@
 import numpy as np
 import math
 from qiskit import QuantumCircuit, QuantumRegister
+from qiskit.circuit.library import StatePreparation
 
 class StatePrep:
     """
@@ -16,7 +17,10 @@ class StatePrep:
             raise ValueError(f"Invalid method: {self.method}")
 
     def load_state_default(self, state: np.ndarray) -> QuantumCircuit:
-        """Load a state into a quantum circuit using the default qiskit method `initialize`."""
+        """Load a state into a quantum circuit using StatePreparation (unitary, no reset).
+        Uses StatePreparation instead of initialize() to avoid the reset gate, which is not
+        supported by restricted backends like IBM Miami (Nighthawk).
+        """
         if not math.log2(len(state)).is_integer():
             raise ValueError(f"State must be a power of two: {len(state)}")
         if not np.isclose(np.linalg.norm(state), 1):
@@ -28,6 +32,7 @@ class StatePrep:
         b_register = QuantumRegister(register_size)
         circuit = QuantumCircuit(b_register)
 
-        # Load the state into the circuit
-        circuit.initialize(list(state), b_register)
+        # Load the state using StatePreparation (unitary gate, no reset)
+        sp = StatePreparation(list(state), normalize=True)
+        circuit.append(sp, b_register)
         return circuit

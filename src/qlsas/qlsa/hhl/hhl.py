@@ -9,59 +9,62 @@ from numpy.linalg import cond
 from qlsas.data_loader import StatePrep
 from qlsas.qlsa.hhl.hhl_helpers import classical_eig_inversion_oracle, quantum_eig_inversion_oracle, dynamic_t0, C_factor
 
-
 class HHL(QLSA):
     def __init__(
         self,
         state_prep: StatePrep,
         readout: str,
         num_qpe_qubits: int,
-        swap_test_vector: Optional[np.ndarray] = None,
         eig_oracle: str = "classical",
     ):
-    # TODO: add all attributes as args to the build_circuit method instead of initializing the class
         """
-        Initialize the HHL QLSA.
+        Initialize the HHL QLSA configuration.
         Args:
             state_prep: The state preparation method to use with load_state().
             readout: The readout method to use. Should be either 'measure_x' or 'swap_test'.
             num_qpe_qubits: The number of qubits to use for the QPE.
-            swap_test_vector: The vector to use for the swap test. Only used if readout is 'swap_test'.
             eig_oracle: The eigenvalue inversion oracle to use. Either 'classical' (default) or
                 'quantum'. The classical oracle uses classically computed eigenvalues to construct
                 controlled-RY rotations; the quantum oracle uses Qiskit's ExactReciprocalGate.
         """
-        
         super().__init__()
         self.state_prep = state_prep
         self.readout = readout
         self.num_qpe_qubits = num_qpe_qubits
-        self.swap_test_vector = swap_test_vector
         self.eig_oracle = eig_oracle
 
-    
-    def build_circuit(self, A: np.ndarray, b: np.ndarray, t0: Optional[float] = None, C: Optional[float] = None) -> QuantumCircuit:
+    def build_circuit(
+        self, 
+        A: np.ndarray, 
+        b: np.ndarray, 
+        swap_test_vector: Optional[np.ndarray] = None,
+        t0: Optional[float] = None, 
+        C: Optional[float] = None
+    ) -> QuantumCircuit:
         """
         Compose the HHL circuit out of the state preparation circuit, the QLSA, and the readout circuit.
         Either calls measure_x_circuit or swap_test_circuit, depending on the readout method.
+        
         Args:
             A: The matrix representing the linear system.
             b: The vector representing the right-hand side of the linear system.
+            swap_test_vector: The vector to use for the swap test. Only used if readout is 'swap_test'.
             t0: The time parameter used in the controlled-Hamiltonian operations.
             C: The scaling factor used in the controlled-Hamiltonian operations.
 
         Returns:
             QuantumCircuit: The composed HHL circuit.
         """
-
         # Check if readout method is valid
         if self.readout not in ("measure_x", "swap_test"):
             raise ValueError("readout must be either 'measure_x' or 'swap_test'")
         if self.eig_oracle not in ("classical", "quantum"):
             raise ValueError("eig_oracle must be either 'classical' or 'quantum'")
-        if self.readout == "swap_test" and self.swap_test_vector is None:
+            
+        # Swap test validation
+        if self.readout == "swap_test" and swap_test_vector is None:
             raise ValueError("swap_test requires `swap_test_vector`.")
-        if self.readout == "measure_x" and self.swap_test_vector is not None:
+        if self.readout == "measure_x" and swap_test_vector is not None:
             warnings.warn("swap_test_vector provided but readout is 'measure_x'; ignoring.")
 
         # Check if A is a square matrix and b is a vector of matching size
@@ -81,25 +84,52 @@ class HHL(QLSA):
             raise ValueError(f"b should have unit norm, instead has norm: {np.linalg.norm(b)}")
 
         # Dynamically calculate t0 and C factor for the HHL circuit
-        if t0 is None:
-            self.t0 = dynamic_t0(A)
-        else:
-            self.t0 = t0
-        if C is None:
-            self.C = C_factor(A)
-        else:
-            self.C = C
+        self.t0 = dynamic_t0(A) if t0 is None else t0
+        self.C = C_factor(A) if C is None else C
 
         # Build circuit based on readout method
         if self.readout == "measure_x":
             return self.measure_x_circuit(A, b)
-
         elif self.readout == "swap_test":
-            return self.swap_test_circuit(A, b)
+            return self.swap_test_circuit(A, b, swap_test_vector)
 
+    def _apply_qpe(
+        self, 
+        circ: QuantumCircuit, 
+        A: np.ndarray, 
+        qpe_register: QuantumRegister, 
+        target_register: QuantumRegister, 
+        inverse: bool = False
+    ) -> None:
+        """Applies Phase Estimation (or Inverse Phase Estimation) for the HHL algorithm."""
+        if not inverse:
+            circ.h(qpe_register)
+            circ.barrier() 
+            
+            for i in range(len(qpe_register)):
+                time = self.t0 * (2**i)
+                U = HamiltonianGate(A, -time, label=f"H_{i}")
+                G = U.control(1)
+                qubits = [qpe_register[i]] + target_register[:]
+                circ.append(G, qubits)
+            
+            circ.barrier() 
+            iqft = QFT(len(qpe_register), approximation_degree=0, do_swaps=True, inverse=True, name='IQFT')
+            circ.append(iqft, qpe_register)
         else:
-            raise ValueError(f"Invalid readout method: {self.readout}")
-
+            qft = QFT(len(qpe_register), approximation_degree=0, do_swaps=True, inverse=False, name='QFT')
+            circ.append(qft, qpe_register)
+            circ.barrier() 
+            
+            for i in reversed(range(len(qpe_register))):
+                time = self.t0 * (2**i)
+                U = HamiltonianGate(A, time, label=f"H_{i}")
+                G = U.control(1)
+                qubits = [qpe_register[i]] + target_register[:]
+                circ.append(G, qubits)
+            
+            circ.barrier()
+            circ.h(qpe_register)
 
     def _apply_eig_oracle(
         self,
@@ -120,21 +150,20 @@ class HHL(QLSA):
                 A=A, t0=self.t0, C=self.C,
             )
 
-
-    def measure_x_circuit(self, A: np.ndarray, b: np.ndarray) -> QuantumCircuit:
+    def _build_base_hhl_circuit(self, A: np.ndarray, b: np.ndarray):
         """
-        Build the circuit for measuring the x register.
+        Build the core operations of the HHL circuit shared among all readout methods.
+        Includes state preparation, forward QPE, eigenvalue inversion, and uncomputation.
         """
         data_register_size = int(math.log2(len(b)))
         
         # Quantum registers
         ancilla_flag_register = QuantumRegister(1, name='ancilla_flag_register') 
-        qpe_register          = QuantumRegister(self.num_qpe_qubits, name='qpe_register') # increase for precision
-        b_to_x_register       = QuantumRegister(data_register_size, name='b_to_x_register') # register to load b into
+        qpe_register          = QuantumRegister(self.num_qpe_qubits, name='qpe_register') 
+        b_to_x_register       = QuantumRegister(data_register_size, name='b_to_x_register') 
+        
         # Classical registers
         ancilla_flag_result   = ClassicalRegister(1, name='ancilla_flag_result')
-        x_result              = ClassicalRegister(data_register_size, name='x_result')
-        # num_qubits = len(qpe_register) + len(b_to_x_register) + 1
 
         # Initialize the circuit
         circ = QuantumCircuit(
@@ -142,175 +171,76 @@ class HHL(QLSA):
             qpe_register, 
             b_to_x_register, 
             ancilla_flag_result, 
-            x_result,
-            name=f"HHL {len(b)} by {len(b)}"
         )
 
-        # init = initialize(list(b))
-        # circ.append(init, b_to_x_register)
+        # 1. State Preparation
+        circ.compose(self.state_prep.load_state(b), b_to_x_register, inplace=True) 
+        circ.barrier() 
         
-        circ.compose( # load b into the circuit
-            self.state_prep.load_state(b),
-            b_to_x_register, 
-            inplace=True) 
+        # 2. Forward QPE
+        self._apply_qpe(circ, A, qpe_register, b_to_x_register, inverse=False)
+        circ.barrier() 
         
-        circ.barrier() #==============================================================
-        circ.h(qpe_register)
-        
-        circ.barrier() #==============================================================
-        for i in range(len(qpe_register)):
-            time = self.t0 / (2**(len(qpe_register) - 1 - i))
-            U = HamiltonianGate(A, time)
-            G = U.control(1)
-            qubits = [qpe_register[i]] + b_to_x_register[:]
-            circ.append(G, qubits)
-        
-        circ.barrier() #==============================================================
-        iqft = QFT(
-            len(qpe_register), 
-            approximation_degree=0, 
-            do_swaps=True, 
-            inverse=True, 
-            name='IQFT'
-            )
-        circ.append(iqft, qpe_register)
-        
-        circ.barrier() #==============================================================
-        # Eigenvalue-based rotation
+        # 3. Eigenvalue-based rotation
         self._apply_eig_oracle(circ, qpe_register, ancilla_flag_register[0], A)
+        circ.barrier() 
 
-        circ.barrier() #==============================================================
-        circ.measure(ancilla_flag_register, ancilla_flag_result) # TODO: add support for mid-circuit measurements to postselect on ancilla flag
+        # 4. Measure Ancilla Flag
+        circ.measure(ancilla_flag_register, ancilla_flag_result) 
+        circ.barrier() 
         
-        circ.barrier() #==============================================================
-        # Uncomputation
-        qft = QFT(
-            len(qpe_register), 
-            approximation_degree=0, 
-            do_swaps=True, 
-            inverse=False, 
-            name='QFT'
-            )
-        circ.append(qft, qpe_register)
+        # 5. Uncomputation (Inverse QPE)
+        self._apply_qpe(circ, A, qpe_register, b_to_x_register, inverse=True)
+        circ.barrier() 
         
-        circ.barrier() #==============================================================
-        for i in range(len(qpe_register))[::-1]:
-            time = self.t0 / (2**(len(qpe_register) - 1 - i))
-            U = HamiltonianGate(A, -time)
-            G = U.control(1)
-            qubits = [qpe_register[i]] + b_to_x_register[:]
-            circ.append(G, qubits)
+        return circ, b_to_x_register
+
+    def measure_x_circuit(self, A: np.ndarray, b: np.ndarray) -> QuantumCircuit:
+        """
+        Build the circuit for measuring the x register.
+        """
+        circ, b_to_x_register = self._build_base_hhl_circuit(A, b)
+        circ.name = f"HHL {len(b)} by {len(b)}"
         
-        circ.barrier() #==============================================================
-        circ.h(qpe_register)
+        # Add custom registers needed for x measurement
+        x_result = ClassicalRegister(len(b_to_x_register), name='x_result')
+        circ.add_register(x_result)
         
-        circ.barrier() #==============================================================
+        # Measure
         circ.measure(b_to_x_register, x_result)
+        
         return circ
         
-
-    def swap_test_circuit(self, A: np.ndarray, b: np.ndarray) -> QuantumCircuit:
+    def swap_test_circuit(self, A: np.ndarray, b: np.ndarray, swap_test_vector: np.ndarray) -> QuantumCircuit:
         """
         Build the circuit for the swap test. Estimates the inner product of x and v.
         """
-        data_register_size = int(math.log2(len(b)))
+        circ, b_to_x_register = self._build_base_hhl_circuit(A, b)
+        circ.name = f"HHL Swap Test {len(b)} by {len(b)}"
         
-        # Quantum registers
-        ancilla_flag_register      = QuantumRegister(1, name='ancilla_flag_register') 
-        qpe_register               = QuantumRegister(self.num_qpe_qubits, name='qpe_register') # increase for precision
-        b_to_x_register            = QuantumRegister(data_register_size, name='b_to_x_register') # register to load b into
-        # quantum registers for the swap test
+        # Add custom registers needed for the swap test
         swap_test_ancilla_register = QuantumRegister(1, name='swap_test_ancilla_register')
-        v_register                 = QuantumRegister(data_register_size, name='v_register') # register to load v into
-        # Classical registers
-        ancilla_flag_result        = ClassicalRegister(1, name='ancilla_flag_result')
+        v_register                 = QuantumRegister(len(b_to_x_register), name='v_register') 
         swap_test_ancilla_result   = ClassicalRegister(1, name='swap_test_result')
-        # num_qubits = len(qpe_register) + len(b_to_x_register) + 1
-
-        # Initialize the circuit
-        circ = QuantumCircuit(
-            ancilla_flag_register, 
-            qpe_register, 
-            b_to_x_register, 
-            swap_test_ancilla_register, 
-            v_register, 
-            ancilla_flag_result, 
-            swap_test_ancilla_result,
-            name=f"HHL Swap Test{len(b)} by {len(b)}"
-        )
-
-        # init = initialize(list(b))
-        # circ.append(init, b_to_x_register)
         
-        circ.compose( # load b into the circuit
-            self.state_prep.load_state(b), 
-            b_to_x_register, 
-            inplace=True) 
+        circ.add_register(swap_test_ancilla_register, v_register, swap_test_ancilla_result)
         
-        circ.barrier() #==============================================================
-        circ.h(qpe_register)
-        
-        circ.barrier() #==============================================================
-        for i in range(len(qpe_register)):
-            time = self.t0 / (2**(len(qpe_register) - 1 - i))
-            U = HamiltonianGate(A, time)
-            G = U.control(1)
-            qubits = [qpe_register[i]] + b_to_x_register[:]
-            circ.append(G, qubits)
-        
-        circ.barrier() #==============================================================
-        iqft = QFT(
-            len(qpe_register), 
-            approximation_degree=0, 
-            do_swaps=True, 
-            inverse=True, 
-            name='IQFT'
-            )
-        circ.append(iqft, qpe_register)
-        
-        circ.barrier() #==============================================================
-        # Eigenvalue-based rotation
-        self._apply_eig_oracle(circ, qpe_register, ancilla_flag_register[0], A)
-
-        circ.barrier() #==============================================================
-        circ.measure(ancilla_flag_register, ancilla_flag_result)
-        
-        circ.barrier() #==============================================================
-        # Uncomputation
-        qft = QFT(
-            len(qpe_register), 
-            approximation_degree=0, 
-            do_swaps=True, 
-            inverse=False, 
-            name='QFT'
-            )
-        circ.append(qft, qpe_register)
-        
-        circ.barrier() #==============================================================
-        for i in range(len(qpe_register))[::-1]:
-            time = self.t0 / (2**(len(qpe_register) - 1 - i))
-            U = HamiltonianGate(A, -time)
-            G = U.control(1)
-            qubits = [qpe_register[i]] + b_to_x_register[:]
-            circ.append(G, qubits)
-        
-        circ.barrier() #==============================================================
-        circ.h(qpe_register)
-        
-        circ.barrier() #==============================================================
-        circ.compose( # load v into the circuit
-            self.state_prep.load_state(self.swap_test_vector),
+        # Load v into the circuit
+        circ.compose(
+            self.state_prep.load_state(swap_test_vector),
             v_register,
             inplace=True
         )
+        circ.barrier()
 
-        circ.barrier() #==============================================================
+        # Swap test operations
         circ.h(swap_test_ancilla_register)
         for i in range(len(b_to_x_register)):
             circ.cswap(swap_test_ancilla_register[0], b_to_x_register[i], v_register[i])
         circ.h(swap_test_ancilla_register)
-        circ.barrier() #==============================================================
+        circ.barrier()
 
+        # Measure
         circ.measure(swap_test_ancilla_register, swap_test_ancilla_result)
         
         return circ
