@@ -13,7 +13,10 @@ class Refiner:
         self.b = b
         self.solver = solver
 
+        if solver.qlsa.readout != 'measure_x':
+            raise ValueError("Refiner cannot be applied to circuits other than 'measure_x'.")
 
+    
     def refine(self,
         precision: float,
         max_iter: int,
@@ -33,6 +36,7 @@ class Refiner:
         Returns:
             dict with refined solution, residuals, errors, etc.
         """
+        
         A                = self.A
         b                = self.b
         nabla            = 1              # scaling factor

@@ -31,6 +31,9 @@ class Post_Processor:
         elif readout == "swap_test" and swap_test_vector is not None:
             return self.process_swap_test(result, A, b, swap_test_vector)
 
+        elif readout == "swap_test" and swap_test_vector is None:
+            raise ValueError("Swap test vector is not provided.")
+
 
     def process_tomography(
         self,
@@ -144,3 +147,13 @@ class Post_Processor:
 
         residual = abs(exp_value - expected_prob)
         return exp_value, success_rate, residual 
+
+    def norm_estimation(self, A, b, x):
+        v = A @ x
+        denominator = np.dot(v, v)
+        if denominator == 0:
+            # If denominator is zero, the vector x is in the null space of A
+            # This indicates a degenerate case. Return a small value to continue iteration.
+            # In practice, this might indicate the system is ill-conditioned.
+            return 1e-10  # Use a smaller value for better numerical stability
+        return np.dot(v, b) / denominator
