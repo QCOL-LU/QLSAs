@@ -1,4 +1,4 @@
-from qlsas.qlsa.base import QLSA
+from qlsas.algorithms.base import QLSA
 from typing import Optional
 import warnings
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
@@ -7,7 +7,7 @@ import numpy as np
 import math
 from numpy.linalg import cond
 from qlsas.data_loader import StatePrep
-from qlsas.qlsa.hhl.hhl_helpers import classical_eig_inversion_oracle, quantum_eig_inversion_oracle, dynamic_t0, C_factor
+from qlsas.algorithms.hhl.hhl_helpers import classical_eig_inversion_oracle, quantum_eig_inversion_oracle, dynamic_t0, C_factor
 
 class HHL(QLSA):
     def __init__(

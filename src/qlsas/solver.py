@@ -9,7 +9,7 @@ from qnexus import QuantinuumConfig
 
 from qlsas.executer import Executer
 from qlsas.post_processor import Post_Processor
-from qlsas.qlsa.base import QLSA
+from qlsas.algorithms.base import QLSA
 from qlsas.transpiler import Transpiler
 
 
