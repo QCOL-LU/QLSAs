@@ -52,36 +52,40 @@ class Refiner:
         x_list                = []             # solution list
         circuit_list          = []             # transpiled circuits per iteration
 
-        # terminition conditions
-        while (LA.norm(r) > precision and iteration <= max_iter):
-            if verbose:
-                print(f"IR Iteration: {iteration}")
-            new_r             = nabla * r
-            A_normalized      = A / LA.norm(new_r)
-            new_r_normalized  = new_r / LA.norm(new_r)
-            new_x             = self.solver.solve(A_normalized, new_r_normalized, verbose=verbose, t0=t0, C=C) # quantum linear solver result
-            circuit_list.append(self.solver.transpiled_circuit)
-            alpha             = self.norm_estimation(A, new_r, new_x)
-            x                += (alpha / nabla) * new_x # scale x by norm of csol
-            x_list.append(x) # append new solution to list
-            x_normalized      = x / LA.norm(x)
-            r                 = (b - A @ x) # next residual
-            assert np.isclose(LA.norm(x_normalized), 1, atol=1e-10), f"x_normalized is not normalized: {LA.norm(x_normalized)}"
-            assert np.isclose(LA.norm(csol_normalized), 1, atol=1e-10), f"csol_normalized is not normalized: {LA.norm(csol_normalized)}"
-            err               = LA.norm(csol_normalized - x_normalized) # both normalized
-            res               = LA.norm(r)
-            error_list.append(err)
-            res_list.append(res)
-            
-            if verbose:
-                print(f"  residual: {res:.4f}, error: {err:.4f}, alpha: {alpha:.4f}")
-                print()
+        self.solver.executer.open_session(self.solver.backend, verbose=verbose)
 
-            if res < 1e-9:
-                nabla *= rho
-            else:
-                nabla = min(rho * nabla, 1 / res)
-            iteration += 1
+        try:
+            while (LA.norm(r) > precision and iteration <= max_iter):
+                if verbose:
+                    print(f"IR Iteration: {iteration}")
+                new_r             = nabla * r
+                A_normalized      = A / LA.norm(new_r)
+                new_r_normalized  = new_r / LA.norm(new_r)
+                new_x             = self.solver.solve(A_normalized, new_r_normalized, verbose=verbose, t0=t0, C=C)
+                circuit_list.append(self.solver.transpiled_circuit)
+                alpha             = self.norm_estimation(A, new_r, new_x)
+                x                += (alpha / nabla) * new_x
+                x_list.append(x)
+                x_normalized      = x / LA.norm(x)
+                r                 = (b - A @ x)
+                assert np.isclose(LA.norm(x_normalized), 1, atol=1e-10), f"x_normalized is not normalized: {LA.norm(x_normalized)}"
+                assert np.isclose(LA.norm(csol_normalized), 1, atol=1e-10), f"csol_normalized is not normalized: {LA.norm(csol_normalized)}"
+                err               = LA.norm(csol_normalized - x_normalized)
+                res               = LA.norm(r)
+                error_list.append(err)
+                res_list.append(res)
+
+                if verbose:
+                    print(f"  residual: {res:.4f}, error: {err:.4f}, alpha: {alpha:.4f}")
+                    print()
+
+                if res < 1e-9:
+                    nabla *= rho
+                else:
+                    nabla = min(rho * nabla, 1 / res)
+                iteration += 1
+        finally:
+            self.solver.executer.close_session(verbose=verbose)
 
         final_result = {
             'refined_x': x,

@@ -28,7 +28,6 @@ class QuantumLinearSolver:
         optimization_level: int = 3,
         executer: Optional[Executer] = None,
         post_processor: Optional[Post_Processor] = None,
-        mode: Optional[str] = None,
     ) -> None:
         self.qlsa = qlsa
         self.backend = backend
@@ -39,7 +38,6 @@ class QuantumLinearSolver:
         self.optimization_level = optimization_level
         self.executer = executer or Executer()
         self.post_processor = post_processor or Post_Processor()
-        self.mode = mode
 
     def solve(self, A: np.ndarray, b: np.ndarray, verbose: bool = True, t0: Optional[float] = None, C: Optional[float] = None) -> np.ndarray:
         """Run the full workflow and return the (post-processed) solution vector."""
@@ -53,7 +51,7 @@ class QuantumLinearSolver:
         self.transpiled_circuit = transpiler.optimize()
 
         if self.qlsa.readout == "swap_test":
-            result = self.executer.run(self.transpiled_circuit, self.backend, self.shots, mode=self.mode, verbose=verbose)
+            result = self.executer.run(self.transpiled_circuit, self.backend, self.shots, verbose=verbose)
             return self.post_processor.process_swap_test(
                 result, A, b, self.qlsa.swap_test_vector
             )[0]
@@ -66,7 +64,7 @@ class QuantumLinearSolver:
         if self.target_successful_shots is not None:
             return self._solve_until_successful_shots(self.transpiled_circuit, A, b, verbose=verbose)
 
-        result = self.executer.run(self.transpiled_circuit, self.backend, self.shots, mode=self.mode, verbose=verbose)
+        result = self.executer.run(self.transpiled_circuit, self.backend, self.shots, verbose=verbose)
         return self.post_processor.process_tomography(result, A, b, verbose=verbose)[0]
 
     def _solve_until_successful_shots(
@@ -78,54 +76,61 @@ class QuantumLinearSolver:
         total_shots_so_far = 0
         batch_size = self.shots_per_batch
 
-        while True:
-            result = self.executer.run(transpiled_circuit, self.backend, batch_size, mode=self.mode, verbose=verbose)
-            joined = result.join_data(names=["ancilla_flag_result", "x_result"])
-            counts = joined.get_counts()
+        opened_session = False
+        if not self.executer.session_active:
+            self.executer.open_session(self.backend, verbose=verbose)
+            opened_session = self.executer.session_active
 
-            num_batch_successful = sum(v for k, v in counts.items() if k[-1] == "1")
+        try:
+            while True:
+                result = self.executer.run(transpiled_circuit, self.backend, batch_size, verbose=verbose)
+                joined = result.join_data(names=["ancilla_flag_result", "x_result"])
+                counts = joined.get_counts()
 
-            if (
-                self.target_successful_shots is not None
-                and num_successful_so_far + num_batch_successful
-                <= self.target_successful_shots
-            ):
-                # Take the whole batch
-                for key, value in counts.items():
-                    accumulated[key] += value
-                num_successful_so_far += num_batch_successful
-                total_shots_so_far += sum(counts.values())
+                num_batch_successful = sum(v for k, v in counts.items() if k[-1] == "1")
 
-                if num_successful_so_far == self.target_successful_shots:
-                    break
-            else:
-                # Take partial batch to hit target exactly
-                needed = (
-                    self.target_successful_shots - num_successful_so_far
-                    if self.target_successful_shots is not None
-                    else 0
-                )
-                bitstrings = joined.get_bitstrings()
+                if (
+                    self.target_successful_shots is not None
+                    and num_successful_so_far + num_batch_successful
+                    <= self.target_successful_shots
+                ):
+                    for key, value in counts.items():
+                        accumulated[key] += value
+                    num_successful_so_far += num_batch_successful
+                    total_shots_so_far += sum(counts.values())
 
-                count_found = 0
-                cutoff = 0
-                for i, bs in enumerate(bitstrings):
-                    if bs[-1] == "1":
-                        count_found += 1
-                    if count_found == needed:
-                        cutoff = i + 1
+                    if num_successful_so_far == self.target_successful_shots:
                         break
+                else:
+                    needed = (
+                        self.target_successful_shots - num_successful_so_far
+                        if self.target_successful_shots is not None
+                        else 0
+                    )
+                    bitstrings = joined.get_bitstrings()
 
-                for bs in bitstrings[:cutoff]:
-                    accumulated[bs] += 1
+                    count_found = 0
+                    cutoff = 0
+                    for i, bs in enumerate(bitstrings):
+                        if bs[-1] == "1":
+                            count_found += 1
+                        if count_found == needed:
+                            cutoff = i + 1
+                            break
 
-                break
+                    for bs in bitstrings[:cutoff]:
+                        accumulated[bs] += 1
 
-            if (
-                self.max_total_shots is not None
-                and total_shots_so_far >= self.max_total_shots
-            ):
-                break
+                    break
+
+                if (
+                    self.max_total_shots is not None
+                    and total_shots_so_far >= self.max_total_shots
+                ):
+                    break
+        finally:
+            if opened_session:
+                self.executer.close_session(verbose=verbose)
 
         final_successful = sum(v for k, v in accumulated.items() if k[-1] == "1")
         hit_max_limit = (

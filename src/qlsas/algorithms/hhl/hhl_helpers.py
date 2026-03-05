@@ -46,8 +46,8 @@ def classical_eig_inversion_oracle(
             lam_est = lam_floor if lam_est >= 0 else -lam_floor
 
         # Find the nearest true eigenvalue (signed distance)
-        #lam = eigs[np.argmin(np.abs(eigs - lam_est))]
-        lam = lam_est
+        lam = eigs[np.argmin(np.abs(eigs - lam_est))]
+        #lam = lam_est
 
         ratio = C / lam
         # Clamp between -1.0 and 1.0 to ensure arcsin is valid
