@@ -17,3 +17,11 @@ src/qlsas/algorithms/__init__.py
 src/qlsas/algorithms/base.py
 src/qlsas/algorithms/hhl/hhl.py
 src/qlsas/algorithms/hhl/hhl_helpers.py
+tests/test_data_loader.py
+tests/test_executer.py
+tests/test_hhl.py
+tests/test_hhl_helpers.py
+tests/test_post_processor.py
+tests/test_refiner.py
+tests/test_solver.py
+tests/test_transpiler.py

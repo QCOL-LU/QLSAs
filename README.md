@@ -103,6 +103,23 @@ QLSAs/
 
 ## Development
 
+### Testing
+
+The project uses [pytest](https://pytest.org/) for testing. Install the package with test dependencies, then run the suite:
+
+```bash
+pip install -e ".[test]"
+pytest
+```
+
+Useful options:
+
+- `pytest -m "not slow"` — skip slow tests (e.g. 8×8 problems)
+- `pytest --cov=qlsas` — run tests with a coverage report
+- `pytest -v` — verbose output
+
+Tests live in the top-level `tests/` directory and mirror the `src/qlsas/` package structure.
+
 ### Working with Virtual Environments
 
 - Always activate your virtual environment before running scripts

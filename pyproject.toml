@@ -23,7 +23,13 @@ dependencies = [
   "guppylang==0.18.0",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=8.0", "pytest-cov>=5.0"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
-
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]

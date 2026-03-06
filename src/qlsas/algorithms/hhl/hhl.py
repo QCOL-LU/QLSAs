@@ -2,7 +2,8 @@ from qlsas.algorithms.base import QLSA
 from typing import Optional
 import warnings
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
-from qiskit.circuit.library import HamiltonianGate, QFT
+from qiskit.circuit.library import HamiltonianGate
+from qiskit.synthesis.qft import synth_qft_full
 import numpy as np
 import math
 from numpy.linalg import cond
@@ -114,11 +115,23 @@ class HHL(QLSA):
                 circ.append(G, qubits)
             
             circ.barrier() 
-            iqft = QFT(len(qpe_register), approximation_degree=0, do_swaps=True, inverse=True, name='IQFT')
-            circ.append(iqft, qpe_register)
+            iqft_circ = synth_qft_full(
+                len(qpe_register),
+                approximation_degree=0,
+                do_swaps=True,
+                inverse=True,
+                name="IQFT",
+            )
+            circ.compose(iqft_circ, qpe_register, inplace=True)
         else:
-            qft = QFT(len(qpe_register), approximation_degree=0, do_swaps=True, inverse=False, name='QFT')
-            circ.append(qft, qpe_register)
+            qft_circ = synth_qft_full(
+                len(qpe_register),
+                approximation_degree=0,
+                do_swaps=True,
+                inverse=False,
+                name="QFT",
+            )
+            circ.compose(qft_circ, qpe_register, inplace=True)
             circ.barrier() 
             
             for i in reversed(range(len(qpe_register))):
