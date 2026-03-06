@@ -8,6 +8,7 @@ from qlsas.solver import QuantumLinearSolver
 from qlsas.data_loader import StatePrep
 from qlsas.algorithms.hhl.hhl import HHL
 from qlsas.executer import Executer
+from qlsas.ibm_options import IBMExecutionOptions
 from qlsas.post_processor import Post_Processor
 
 
@@ -22,6 +23,45 @@ def _normalized(v):
 def _make_hhl(readout="measure_x", num_qpe=4, oracle="classical"):
     sp = StatePrep(method="default")
     return HHL(state_prep=sp, readout=readout, num_qpe_qubits=num_qpe, eig_oracle=oracle)
+
+
+class _StubQLSA:
+    readout = "measure_x"
+
+    def build_circuit(self, A, b, t0=None, C=None):
+        return "fake-circuit"
+
+
+class _RecordingExecuter:
+    def __init__(self):
+        self.session_active = False
+        self.calls = []
+
+    def run(self, transpiled_circuit, backend, shots, ibm_options=None, verbose=True):
+        self.calls.append(
+            {
+                "transpiled_circuit": transpiled_circuit,
+                "backend": backend,
+                "shots": shots,
+                "ibm_options": ibm_options,
+            }
+        )
+        return "fake-result"
+
+
+class _RecordingPostProcessor:
+    def process_tomography(self, result, A, b, verbose=True):
+        return np.array([1.0, 0.0]), 1.0, 0.0
+
+
+class _FakeTranspiler:
+    def __init__(self, circuit, backend, optimization_level):
+        self.circuit = circuit
+        self.backend = backend
+        self.optimization_level = optimization_level
+
+    def optimize(self):
+        return "fake-transpiled-circuit"
 
 
 # ===================================================================
@@ -50,6 +90,38 @@ class TestConstructorDefaults:
         custom_ex = Executer()
         solver = QuantumLinearSolver(qlsa=hhl, backend=aer_backend, executer=custom_ex)
         assert solver.executer is custom_ex
+
+    def test_default_executer_receives_ibm_options(self, aer_backend):
+        hhl = _make_hhl()
+        ibm_options = IBMExecutionOptions(enable_error_mitigation=True)
+        solver = QuantumLinearSolver(qlsa=hhl, backend=aer_backend, ibm_options=ibm_options)
+        assert solver.executer.ibm_options is ibm_options
+
+
+class TestIBMOptionsThreading:
+
+    def test_solver_passes_ibm_options_to_executer(self, monkeypatch):
+        monkeypatch.setattr("qlsas.solver.Transpiler", _FakeTranspiler)
+
+        ibm_options = IBMExecutionOptions(
+            enable_error_mitigation=True,
+            enable_dynamical_decoupling=True,
+        )
+        executer = _RecordingExecuter()
+        post_processor = _RecordingPostProcessor()
+        solver = QuantumLinearSolver(
+            qlsa=_StubQLSA(),
+            backend=object(),
+            shots=128,
+            ibm_options=ibm_options,
+            executer=executer,
+            post_processor=post_processor,
+        )
+
+        solver.solve(np.eye(2), np.array([1.0, 0.0]), verbose=False)
+
+        assert len(executer.calls) == 1
+        assert executer.calls[0]["ibm_options"] is ibm_options
 
 
 # ===================================================================

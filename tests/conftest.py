@@ -1,11 +1,36 @@
 """Shared fixtures for the qlsas test suite."""
 
+import os
 import numpy as np
 import pytest
 from qiskit_aer import AerSimulator
 
 from qlsas.data_loader import StatePrep
 from qlsas.algorithms.hhl.hhl import HHL
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--run-hardware",
+        action="store_true",
+        default=False,
+        help="Run tests that talk to real IBM or Quantinuum hardware.",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    if config.getoption("--run-hardware") or os.environ.get("QLSAS_RUN_HARDWARE_TESTS") == "1":
+        return
+
+    skip_hardware = pytest.mark.skip(
+        reason=(
+            "hardware tests are disabled by default to avoid paid backend runs; "
+            "use --run-hardware or QLSAS_RUN_HARDWARE_TESTS=1 to enable them."
+        )
+    )
+    for item in items:
+        if "hardware" in item.keywords:
+            item.add_marker(skip_hardware)
 
 
 # ---------------------------------------------------------------------------

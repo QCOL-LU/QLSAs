@@ -11,6 +11,11 @@ from qiskit.providers.jobstatus import JobStatus
 from qnexus import QuantinuumConfig
 from pytket.circuit import Circuit
 
+from qlsas.ibm_options import (
+    IBMExecutionOptions,
+    apply_ibm_error_mitigation_options,
+)
+
 
 class Executer:
     """
@@ -18,8 +23,9 @@ class Executer:
     Must specify a hardware or simulator backend from qiskit or qnexus.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, ibm_options: Optional[IBMExecutionOptions] = None) -> None:
         self._session: Optional[Session] = None
+        self.ibm_options = ibm_options
 
     # ------------------------------------------------------------------
     # Session lifecycle
@@ -84,6 +90,7 @@ class Executer:
         transpiled_circuit: Union[QuantumCircuit, Circuit],
         backend: Union[BackendV2, QuantinuumConfig],
         shots: int,
+        ibm_options: Optional[IBMExecutionOptions] = None,
         verbose: bool = True
     ) -> Any:
         """
@@ -97,7 +104,13 @@ class Executer:
             A result object containing the result of the execution.
         """
         if isinstance(backend, (BackendV2, IBMBackend)):
-            return self.run_qiskit(transpiled_circuit, backend, shots, verbose=verbose)
+            return self.run_qiskit(
+                transpiled_circuit,
+                backend,
+                shots,
+                ibm_options=ibm_options,
+                verbose=verbose,
+            )
         elif isinstance(backend, QuantinuumConfig):
             return self.run_qnexus(transpiled_circuit, backend, shots, verbose=verbose)
         else:
@@ -108,6 +121,7 @@ class Executer:
         transpiled_circuit: QuantumCircuit, 
         backend: BackendV2, 
         shots: int,
+        ibm_options: Optional[IBMExecutionOptions] = None,
         verbose: bool = True
     ) -> Any:
         """
@@ -121,6 +135,10 @@ class Executer:
             sampler = Sampler(mode=self._session)
         else:
             sampler = Sampler(mode=backend)
+
+        effective_ibm_options = ibm_options or self.ibm_options
+        if isinstance(backend, IBMBackend):
+            apply_ibm_error_mitigation_options(sampler.options, effective_ibm_options)
 
         job = sampler.run([transpiled_circuit], shots=shots)
         job_id = job.job_id()
