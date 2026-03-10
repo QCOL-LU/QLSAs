@@ -3,9 +3,9 @@
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
-from qnexus import QuantinuumConfig
 from pytket.circuit import Circuit as TketCircuit
 
+from qlsas.quantinuum_config import QuantinuumBackendConfig
 from qlsas.transpiler import Transpiler
 from qlsas.data_loader import StatePrep
 from qlsas.algorithms.hhl.hhl import HHL
@@ -76,12 +76,14 @@ class TestTranspilerValidation:
         with pytest.raises(ValueError, match="circuit type"):
             transpiler.optimize()
 
-    def test_quantinuum_backend_not_implemented(self):
+    def test_quantinuum_transpilation_returns_pytket(self):
         circ = _small_hhl_circuit()
-        backend = QuantinuumConfig(device_name="H1-1LE")
+        backend = QuantinuumBackendConfig(device_name="H1-1E", n_qubits=10)
         transpiler = Transpiler(circuit=circ, backend=backend, optimization_level=1)
-        with pytest.raises(NotImplementedError):
-            transpiler.optimize()
+        result = transpiler.optimize()
+        assert isinstance(result, TketCircuit)
+        assert len(transpiler.register_infos) > 0
+        assert len(transpiler.measurement_plan) > 0
 
     def test_invalid_backend_type(self):
         circ = _small_hhl_circuit()

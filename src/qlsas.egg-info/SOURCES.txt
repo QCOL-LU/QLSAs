@@ -4,7 +4,10 @@ pyproject.toml
 src/qlsas/__init__.py
 src/qlsas/data_loader.py
 src/qlsas/executer.py
+src/qlsas/guppy_runner.py
+src/qlsas/ibm_options.py
 src/qlsas/post_processor.py
+src/qlsas/quantinuum_config.py
 src/qlsas/refiner.py
 src/qlsas/solver.py
 src/qlsas/transpiler.py

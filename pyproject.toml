@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 dependencies = [
-  "numpy==1.26.4",
+  "numpy>=1.26",
   "pandas==2.2.3",
   "matplotlib==3.9.2",
   "qiskit>=2.0",
@@ -20,7 +20,8 @@ dependencies = [
   "pytket>=2.3.2",
   "pytket-qiskit>=0.67",
   "qnexus>=0.15.0",
-  "guppylang==0.18.0",
+  "guppylang>=0.21",
+  "selene-sim>=0.2",
 ]
 
 [project.optional-dependencies]

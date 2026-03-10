@@ -4,8 +4,7 @@ import numpy as np
 import pytest
 from types import SimpleNamespace
 from pytket.circuit import Circuit as TketCircuit
-from qnexus import QuantinuumConfig
-
+from qlsas.quantinuum_config import QuantinuumBackendConfig
 from qlsas.executer import Executer
 from qlsas.transpiler import Transpiler
 from qlsas.ibm_options import (
@@ -124,12 +123,12 @@ class TestExecution:
         assert isinstance(counts, dict)
         assert sum(counts.values()) == 100
 
-    def test_run_qnexus_not_implemented(self):
+    def test_run_quantinuum_requires_metadata(self):
         ex = Executer()
-        backend = QuantinuumConfig(device_name="H1-1LE")
+        backend = QuantinuumBackendConfig(device_name="H1-1E", n_qubits=4)
         tket_circ = TketCircuit(2)
         tket_circ.H(0)
-        with pytest.raises(NotImplementedError):
+        with pytest.raises(ValueError, match="register_infos"):
             ex.run(tket_circ, backend, shots=10, verbose=False)
 
     def test_invalid_backend_type(self):

@@ -1,9 +1,10 @@
 from typing import Optional
 
-from qlsas.solver import QuantumLinearSolver
 import numpy as np
 import matplotlib.pyplot as plt
 import numpy.linalg as LA
+
+from qlsas.solver import QuantumLinearSolver
 
 
 class Refiner:

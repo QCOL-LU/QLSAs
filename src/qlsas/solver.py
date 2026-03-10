@@ -5,8 +5,8 @@ from typing import Optional, Union
 
 import numpy as np
 from qiskit.providers.backend import BackendV2
-from qnexus import QuantinuumConfig
 
+from qlsas.quantinuum_config import QuantinuumBackendConfig
 from qlsas.executer import Executer
 from qlsas.ibm_options import IBMExecutionOptions
 from qlsas.post_processor import Post_Processor
@@ -20,7 +20,7 @@ class QuantumLinearSolver:
     def __init__(
         self,
         qlsa: QLSA,
-        backend: Union[BackendV2, QuantinuumConfig],
+        backend: Union[BackendV2, QuantinuumBackendConfig],
         *,
         shots: int = 1024,
         target_successful_shots: Optional[int] = None,
@@ -42,7 +42,19 @@ class QuantumLinearSolver:
         self.executer = executer or Executer(ibm_options=ibm_options)
         self.post_processor = post_processor or Post_Processor()
 
-    def solve(self, A: np.ndarray, b: np.ndarray, verbose: bool = True, t0: Optional[float] = None, C: Optional[float] = None) -> np.ndarray:
+
+    @property
+    def _is_quantinuum(self) -> bool:
+        return isinstance(self.backend, QuantinuumBackendConfig)
+
+    def solve(
+        self,
+        A: np.ndarray,
+        b: np.ndarray,
+        verbose: bool = True,
+        t0: Optional[float] = None,
+        C: Optional[float] = None,
+    ) -> np.ndarray:
         """Run the full workflow and return the (post-processed) solution vector."""
         self.circuit = self.qlsa.build_circuit(A, b, t0=t0, C=C)
 
@@ -54,38 +66,93 @@ class QuantumLinearSolver:
         self.transpiled_circuit = transpiler.optimize()
 
         if self.qlsa.readout == "swap_test":
-            result = self.executer.run(
-                self.transpiled_circuit,
-                self.backend,
-                self.shots,
-                ibm_options=self.ibm_options,
-                verbose=verbose,
-            )
+            result = self._execute(transpiler, verbose=verbose)
             return self.post_processor.process_swap_test(
                 result, A, b, self.qlsa.swap_test_vector
             )[0]
 
         if self.qlsa.readout != "measure_x":
             raise ValueError(
-                f"Invalid readout method: {self.qlsa.readout}.  Must be 'measure_x' or 'swap_test'."
+                f"Invalid readout method: {self.qlsa.readout}. "
+                "Must be 'measure_x' or 'swap_test'."
             )
 
         if self.target_successful_shots is not None:
-            return self._solve_until_successful_shots(self.transpiled_circuit, A, b, verbose=verbose)
+            return self._solve_until_successful_shots(
+                self.transpiled_circuit, A, b, verbose=verbose,
+                transpiler=transpiler,
+            )
 
-        result = self.executer.run(
+        result = self._execute(transpiler, verbose=verbose)
+        return self.post_processor.process_tomography(result, A, b, verbose=verbose)[0]
+
+    def _execute(
+        self, transpiler: Transpiler, verbose: bool = True, shots: int | None = None,
+    ):
+        """Dispatch execution to the correct backend path."""
+        effective_shots = shots if shots is not None else self.shots
+        if self._is_quantinuum:
+            return self.executer.run(
+                self.transpiled_circuit,
+                self.backend,
+                effective_shots,
+                verbose=verbose,
+                register_infos=transpiler.register_infos,
+                measurement_plan=transpiler.measurement_plan,
+                optimization_level=self.optimization_level,
+            )
+        return self.executer.run(
             self.transpiled_circuit,
             self.backend,
-            self.shots,
+            effective_shots,
             ibm_options=self.ibm_options,
             verbose=verbose,
         )
-        return self.post_processor.process_tomography(result, A, b, verbose=verbose)[0]
 
     def _solve_until_successful_shots(
-        self, transpiled_circuit, A: np.ndarray, b: np.ndarray, verbose: bool = True
+        self,
+        transpiled_circuit,
+        A: np.ndarray,
+        b: np.ndarray,
+        verbose: bool = True,
+        transpiler: Transpiler | None = None,
     ) -> np.ndarray:
-        """Run batches of shots until we have at least target_successful_shots with ancilla=1."""
+        """Run batches of shots until we have at least target_successful_shots with ancilla=1.
+
+        For Quantinuum backends, all shots are run in a single execution (no
+        per-batch Guppy recompilation) and the result is trimmed client-side.
+        For IBM backends, shots are submitted in batches within an IBM session.
+        """
+        if self._is_quantinuum:
+            return self._quantinuum_successful_shots(
+                A, b, verbose=verbose, transpiler=transpiler,
+            )
+        return self._ibm_successful_shots(
+            transpiled_circuit, A, b, verbose=verbose,
+        )
+
+    def _quantinuum_successful_shots(
+        self,
+        A: np.ndarray,
+        b: np.ndarray,
+        verbose: bool = True,
+        transpiler: Transpiler | None = None,
+    ) -> np.ndarray:
+        """Single-execution path: run max_total_shots (or a large batch) once, trim to target."""
+        assert transpiler is not None
+        total_shots = self.max_total_shots or self.shots
+        counts = self._execute(transpiler, verbose=verbose, shots=total_shots)
+        trimmed = _trim_counts_to_target(counts, self.target_successful_shots)
+        return self.post_processor.tomography_from_counts(trimmed, A, b)[0]
+
+    def _ibm_successful_shots(
+        self,
+        transpiled_circuit,
+        A: np.ndarray,
+        b: np.ndarray,
+        verbose: bool = True,
+    ) -> np.ndarray:
+        """Batched IBM path: submit batches within a session until target is reached."""
         accumulated: dict[str, int] = defaultdict(int)
         num_successful_so_far = 0
         total_shots_so_far = 0
@@ -166,3 +233,25 @@ class QuantumLinearSolver:
 
         return self.post_processor.tomography_from_counts(dict(accumulated), A, b)[0]
 
+
+def _trim_counts_to_target(
+    counts: dict[str, int],
+    target_successful: int | None,
+) -> dict[str, int]:
+    """Keep all failed shots and exactly *target_successful* successful shots (ancilla=1)."""
+    if target_successful is None:
+        return counts
+
+    trimmed: dict[str, int] = {}
+    found = 0
+    for key, count in counts.items():
+        if key[-1] != "1":
+            trimmed[key] = count
+            continue
+        if found >= target_successful:
+            continue
+        take = min(count, target_successful - found)
+        trimmed[key] = take
+        found += take
+
+    return trimmed
