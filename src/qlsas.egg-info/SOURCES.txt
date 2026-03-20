@@ -4,6 +4,7 @@ pyproject.toml
 src/qlsas/__init__.py
 src/qlsas/data_loader.py
 src/qlsas/executer.py
+src/qlsas/ibm_options.py
 src/qlsas/post_processor.py
 src/qlsas/refiner.py
 src/qlsas/solver.py

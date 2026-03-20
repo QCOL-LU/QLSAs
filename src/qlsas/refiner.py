@@ -24,6 +24,7 @@ class Refiner:
         verbose: bool = True,
         t0: Optional[float] = None,
         C: Optional[float] = None,
+        open_session: bool = True,
     ) -> dict:
         """
         Iterative Refinement for quantum linear solver.
@@ -34,6 +35,7 @@ class Refiner:
             verbose: If True, print progress per iteration.
             t0: Optional time parameter for HHL controlled-Hamiltonian (passed to solver).
             C: Optional scaling factor for HHL controlled-Hamiltonian (passed to solver).
+            open_session: If True, open an IBM session (only for IBMBackends). Set to False to disable.
         Returns:
             dict with refined solution, residuals, errors, etc.
         """
@@ -52,7 +54,8 @@ class Refiner:
         x_list                = []             # solution list
         circuit_list          = []             # transpiled circuits per iteration
 
-        self.solver.executer.open_session(self.solver.backend, verbose=verbose)
+        if open_session:
+            self.solver.executer.open_session(self.solver.backend, verbose=verbose)
 
         try:
             while (LA.norm(r) > precision and iteration <= max_iter):
@@ -85,7 +88,8 @@ class Refiner:
                     nabla = min(rho * nabla, 1 / res)
                 iteration += 1
         finally:
-            self.solver.executer.close_session(verbose=verbose)
+            if open_session:
+                self.solver.executer.close_session(verbose=verbose)
 
         final_result = {
             'refined_x': x,

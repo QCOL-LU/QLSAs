@@ -30,6 +30,7 @@ class QuantumLinearSolver:
         ibm_options: Optional[IBMExecutionOptions] = None,
         executer: Optional[Executer] = None,
         post_processor: Optional[Post_Processor] = None,
+        
     ) -> None:
         self.qlsa = qlsa
         self.backend = backend
@@ -92,7 +93,7 @@ class QuantumLinearSolver:
         batch_size = self.shots_per_batch
 
         opened_session = False
-        if not self.executer.session_active:
+        if self.executer.session_active:
             self.executer.open_session(self.backend, verbose=verbose)
             opened_session = self.executer.session_active
 
