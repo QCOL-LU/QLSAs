@@ -8,7 +8,13 @@ import numpy as np
 import math
 from numpy.linalg import cond
 from qlsas.data_loader import StatePrep
-from qlsas.algorithms.hhl.hhl_helpers import classical_eig_inversion_oracle, quantum_eig_inversion_oracle, dynamic_t0, C_factor
+from qlsas.algorithms.hhl.hhl_helpers import (
+    classical_eig_inversion_oracle,
+    quantum_eig_inversion_oracle,
+    unary_iteration_eig_inversion_oracle,
+    dynamic_t0,
+    C_factor,
+)
 
 class HHL(QLSA):
     def __init__(
@@ -24,9 +30,11 @@ class HHL(QLSA):
             state_prep: The state preparation method to use with load_state().
             readout: The readout method to use. Should be either 'measure_x' or 'swap_test'.
             num_qpe_qubits: The number of qubits to use for the QPE.
-            eig_oracle: The eigenvalue inversion oracle to use. Either 'classical' (default) or
-                'quantum'. The classical oracle uses classically computed eigenvalues to construct
-                controlled-RY rotations; the quantum oracle uses Qiskit's ExactReciprocalGate.
+            eig_oracle: The eigenvalue inversion oracle to use. One of 'classical' (default),
+                'quantum', or 'unary'. The classical oracle uses classically computed eigenvalues
+                with individual m-controlled RY gates; the unary oracle uses the same angles but
+                decomposes them via a uniformly controlled RY tree (lower depth); the quantum
+                oracle uses Qiskit's ExactReciprocalGate.
         """
         super().__init__()
         self.state_prep = state_prep
@@ -59,8 +67,8 @@ class HHL(QLSA):
         # Check if readout method is valid
         if self.readout not in ("measure_x", "swap_test"):
             raise ValueError("readout must be either 'measure_x' or 'swap_test'")
-        if self.eig_oracle not in ("classical", "quantum"):
-            raise ValueError("eig_oracle must be either 'classical' or 'quantum'")
+        if self.eig_oracle not in ("classical", "quantum", "unary"):
+            raise ValueError("eig_oracle must be 'classical', 'quantum', or 'unary'")
             
         # Swap test validation
         if self.readout == "swap_test" and swap_test_vector is None:
@@ -154,6 +162,11 @@ class HHL(QLSA):
         """Dispatch to the selected eigenvalue inversion oracle."""
         if self.eig_oracle == "classical":
             classical_eig_inversion_oracle(
+                circ, qpe_register, ancilla_qubit,
+                A=A, t0=self.t0, C=self.C,
+            )
+        elif self.eig_oracle == "unary":
+            unary_iteration_eig_inversion_oracle(
                 circ, qpe_register, ancilla_qubit,
                 A=A, t0=self.t0, C=self.C,
             )

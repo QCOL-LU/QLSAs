@@ -174,5 +174,10 @@ def hhl_swap_test_classical(state_prep):
 
 
 @pytest.fixture(scope="session")
+def hhl_measure_x_unary(state_prep):
+    return HHL(state_prep=state_prep, readout="measure_x", num_qpe_qubits=4, eig_oracle="unary")
+
+
+@pytest.fixture(scope="session")
 def hhl_3qpe_measure_x(state_prep):
     return HHL(state_prep=state_prep, readout="measure_x", num_qpe_qubits=3, eig_oracle="classical")
