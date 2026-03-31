@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qlsas"
 version = "0.1.0"
-description = "Quantum Linear Solver Algorithms"
+description = "A toolkit for running Quantum Linear Systems Algorithms (QLSAs) on quantum hardware"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }

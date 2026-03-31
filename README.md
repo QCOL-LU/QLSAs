@@ -1,10 +1,10 @@
-# QLSA Benchmarking Suite
+# QLSA Toolkit
 
-A large-scale benchmarking suite for Quantum Linear Systems Algorithms (QLSAs), supporting multiple algorithms across different quantum hardware providers.
+A toolkit for running Quantum Linear Systems Algorithms (QLSAs) on quantum hardware, supporting multiple algorithms across different quantum hardware providers.
 
 ## Overview
 
-This project benchmarks quantum linear systems algorithms including:
+Supported algorithms:
 - **HHL** (Harrow-Hassidim-Lloyd)
 - **QSVT** (Quantum Singular Value Transformation)
 - **VQLSA** (Variational Quantum Linear Systems Algorithm)

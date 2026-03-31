@@ -1,1 +1,1 @@
-# Different problem generator scripts and datasets of (A,b) instances used for benchmarking QLSAs across algorithm and backend specifications.
+# Problem generator scripts and datasets of (A,b) instances for running QLSAs across different algorithms and backends.
