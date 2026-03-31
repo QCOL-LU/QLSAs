@@ -19,7 +19,7 @@ _repo_root = _find_repo_root()
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
-from linear_systems_problems.random_matrix_generator_v2 import generate_problem
+from linear_systems_problems.random_matrix_generator_v3 import generate_problem
 
 problem_sizes = [2, 4, 8, 16, 32, 64]
 cond_numbers = [1, 5, 1e1, 5e1, 1e2, 5e2, 1e3, 5e3, 1e4, 5e4, 1e5, 5e5, 1e6, 5e6, 1e7, 5e7]

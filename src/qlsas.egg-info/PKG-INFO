@@ -27,7 +27,7 @@ License: MIT License
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: numpy==1.26.4
+Requires-Dist: numpy>=1.26
 Requires-Dist: pandas==2.2.3
 Requires-Dist: matplotlib==3.9.2
 Requires-Dist: qiskit>=2.0
@@ -36,8 +36,10 @@ Requires-Dist: qiskit-ibm-runtime>=0.45
 Requires-Dist: pylatexenc==2.10.0
 Requires-Dist: pytket>=2.3.2
 Requires-Dist: pytket-qiskit>=0.67
+Requires-Dist: pytket-quantinuum>=0.40
 Requires-Dist: qnexus>=0.15.0
-Requires-Dist: guppylang==0.18.0
+Requires-Dist: guppylang>=0.21
+Requires-Dist: selene-sim>=0.2
 Provides-Extra: test
 Requires-Dist: pytest>=8.0; extra == "test"
 Requires-Dist: pytest-cov>=5.0; extra == "test"
