@@ -1,4 +1,9 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
 .venv/
 qnexus_workflow/venv/
 qnexus/venv/
-qipm.ipynb
