@@ -157,6 +157,8 @@ class QuantumLinearSolver:
         accumulated: dict[str, int] = defaultdict(int)
         num_successful_so_far = 0
         total_shots_so_far = 0
+        total_shots_submitted = 0
+        total_successful_seen = 0
         batch_size = self.shots_per_batch
 
         opened_session = False
@@ -177,6 +179,8 @@ class QuantumLinearSolver:
                 counts = joined.get_counts()
 
                 num_batch_successful = sum(v for k, v in counts.items() if k[-1] == "1")
+                total_shots_submitted += sum(counts.values())
+                total_successful_seen += num_batch_successful
 
                 if (
                     self.target_successful_shots is not None
@@ -231,6 +235,13 @@ class QuantumLinearSolver:
                 f"Expected exactly {self.target_successful_shots} successful shots, "
                 f"but got {final_successful}."
             )
+
+        self.last_total_shots_submitted = total_shots_submitted
+        self.last_total_successful_seen = total_successful_seen
+        self.last_success_probability = (
+            total_successful_seen / total_shots_submitted
+            if total_shots_submitted > 0 else 0.0
+        )
 
         return self.post_processor.tomography_from_counts(dict(accumulated), A, b)[0]
 

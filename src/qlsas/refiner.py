@@ -54,6 +54,7 @@ class Refiner:
         error_list            = []             # error list
         x_list                = []             # solution list
         circuit_list          = []             # transpiled circuits per iteration
+        shot_stats_list       = []             # per-iteration shot statistics
 
         if open_session:
             self.solver.executer.open_session(self.solver.backend, verbose=verbose)
@@ -67,6 +68,11 @@ class Refiner:
                 new_r_normalized  = new_r / LA.norm(new_r)
                 new_x             = self.solver.solve(A_normalized, new_r_normalized, verbose=verbose, t0=t0, C=C)
                 circuit_list.append(self.solver.transpiled_circuit)
+                shot_stats_list.append({
+                    'total_shots_submitted': getattr(self.solver, 'last_total_shots_submitted', None),
+                    'total_successful_seen': getattr(self.solver, 'last_total_successful_seen', None),
+                    'success_probability': getattr(self.solver, 'last_success_probability', None),
+                })
                 alpha             = self.norm_estimation(A, new_r, new_x)
                 x                += (alpha / nabla) * new_x
                 x_list.append(x)
@@ -99,6 +105,7 @@ class Refiner:
             'total_iterations': iteration,
             'initial_solution': x_list[0],
             'transpiled_circuits': circuit_list,
+            'shot_stats': shot_stats_list,
         }
 
         if plot:
