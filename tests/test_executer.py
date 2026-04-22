@@ -11,8 +11,9 @@ from qlsas.ibm_options import (
     IBMExecutionOptions,
     apply_ibm_error_mitigation_options,
 )
-from qlsas.data_loader import StatePrep
-from qlsas.algorithms.hhl.hhl import HHL
+from qlsas.state_prep import StatePrep, DefaultStatePrep
+from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.readout import MeasureXReadout
 
 
 # ---------------------------------------------------------------------------
@@ -21,11 +22,13 @@ from qlsas.algorithms.hhl.hhl import HHL
 
 def _transpiled_2x2_circuit(aer_backend):
     """Build and transpile a 2x2 HHL circuit for the AerSimulator."""
-    sp = StatePrep(method="default")
-    hhl = HHL(state_prep=sp, readout="measure_x", num_qpe_qubits=3, eig_oracle="classical")
+    sp = DefaultStatePrep()
+    hhl = HHL(num_qpe_qubits=3, eig_oracle=ClassicalEigOracle())
     A = np.array([[2.0, 1.0], [1.0, 3.0]])
     b = np.array([1.0, 0.0])
-    circ = hhl.build_circuit(A, b)
+    qlsa_circuit = hhl.build_circuit(A, b, sp)
+    readout = MeasureXReadout()
+    circ = readout.apply(qlsa_circuit)
     transpiler = Transpiler(circuit=circ, backend=aer_backend, optimization_level=1)
     return transpiler.optimize()
 
@@ -114,12 +117,11 @@ class TestExecution:
         result = ex.run(tc, aer_backend, shots=100, verbose=False)
         assert result is not None
 
-    def test_result_has_join_data(self, aer_backend):
+    def test_result_get_counts(self, aer_backend):
         tc = _transpiled_2x2_circuit(aer_backend)
         ex = Executer()
         result = ex.run(tc, aer_backend, shots=100, verbose=False)
-        joined = result.join_data(names=["ancilla_flag_result", "x_result"])
-        counts = joined.get_counts()
+        counts = result.get_counts(["ancilla_flag_result", "x_result"])
         assert isinstance(counts, dict)
         assert sum(counts.values()) == 100
 

@@ -5,8 +5,9 @@ import numpy.linalg as LA
 import pytest
 
 from qlsas.post_processor import Post_Processor
-from qlsas.data_loader import StatePrep
-from qlsas.algorithms.hhl.hhl import HHL
+from qlsas.state_prep import StatePrep, DefaultStatePrep
+from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.readout import MeasureXReadout, SwapTestReadout
 from qlsas.transpiler import Transpiler
 from qlsas.executer import Executer
 
@@ -21,9 +22,11 @@ def _normalized(v):
 
 def _run_hhl_2x2_measure_x(aer_backend, A, b, shots=4096):
     """Build, transpile, and execute a 2x2 measure_x HHL circuit; return the raw result."""
-    sp = StatePrep(method="default")
-    hhl = HHL(state_prep=sp, readout="measure_x", num_qpe_qubits=4, eig_oracle="classical")
-    circ = hhl.build_circuit(A, b)
+    sp = DefaultStatePrep()
+    hhl = HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle())
+    qlsa_circuit = hhl.build_circuit(A, b, sp)
+    readout = MeasureXReadout()
+    circ = readout.apply(qlsa_circuit)
     transpiler = Transpiler(circuit=circ, backend=aer_backend, optimization_level=1)
     tc = transpiler.optimize()
     ex = Executer()
@@ -32,9 +35,11 @@ def _run_hhl_2x2_measure_x(aer_backend, A, b, shots=4096):
 
 def _run_hhl_2x2_swap_test(aer_backend, A, b, swap_vec, shots=4096):
     """Build, transpile, and execute a 2x2 swap_test HHL circuit; return the raw result."""
-    sp = StatePrep(method="default")
-    hhl = HHL(state_prep=sp, readout="swap_test", num_qpe_qubits=4, eig_oracle="classical")
-    circ = hhl.build_circuit(A, b, swap_test_vector=swap_vec)
+    sp = DefaultStatePrep()
+    hhl = HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle())
+    qlsa_circuit = hhl.build_circuit(A, b, sp)
+    readout = SwapTestReadout(swap_test_vector=swap_vec, state_prep=sp)
+    circ = readout.apply(qlsa_circuit)
     transpiler = Transpiler(circuit=circ, backend=aer_backend, optimization_level=1)
     tc = transpiler.optimize()
     ex = Executer()
@@ -128,15 +133,15 @@ class TestFinishTomography:
 
 
 # ===================================================================
-# Integration: process_qiskit_tomography
+# Integration: process via MeasureXReadout
 # ===================================================================
 
 class TestProcessQiskitTomography:
 
     def test_solution_direction_close_to_classical(self, aer_backend, pd_2x2, b_2):
         result = _run_hhl_2x2_measure_x(aer_backend, pd_2x2, b_2, shots=4096)
-        pp = Post_Processor()
-        solution, success_rate, residual = pp.process_qiskit_tomography(result, pd_2x2, b_2, verbose=False)
+        readout = MeasureXReadout()
+        solution, success_rate, residual = readout.process(result, pd_2x2, b_2, verbose=False)
 
         classical = LA.solve(pd_2x2, b_2)
         classical_norm = _normalized(classical)
@@ -147,7 +152,7 @@ class TestProcessQiskitTomography:
 
 
 # ===================================================================
-# Integration: process_qiskit_swap_test
+# Integration: process via SwapTestReadout
 # ===================================================================
 
 class TestProcessQiskitSwapTest:
@@ -156,8 +161,8 @@ class TestProcessQiskitSwapTest:
         classical = LA.solve(pd_2x2, b_2)
         swap_vec = _normalized(classical)
         result = _run_hhl_2x2_swap_test(aer_backend, pd_2x2, b_2, swap_vec, shots=4096)
-        pp = Post_Processor()
-        exp_value, success_rate, residual = pp.process_qiskit_swap_test(result, pd_2x2, b_2, swap_vec)
+        readout = SwapTestReadout(swap_test_vector=swap_vec)
+        exp_value, success_rate, residual = readout.process(result, pd_2x2, b_2)
 
         assert 0 <= exp_value <= 1
         assert success_rate > 0

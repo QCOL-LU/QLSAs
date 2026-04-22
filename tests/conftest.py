@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 from qiskit_aer import AerSimulator
 
-from qlsas.data_loader import StatePrep
-from qlsas.algorithms.hhl.hhl import HHL
+from qlsas.state_prep import StatePrep, DefaultStatePrep
+from qlsas.algorithms.hhl import HHL, ClassicalEigOracle, QuantumEigOracle, UnaryEigOracle
 
 
 def pytest_addoption(parser):
@@ -63,7 +63,7 @@ def aer_backend():
 
 @pytest.fixture(scope="session")
 def state_prep():
-    return StatePrep(method="default")
+    return DefaultStatePrep()
 
 
 # ---------------------------------------------------------------------------
@@ -155,29 +155,24 @@ def b_8():
 
 
 # ---------------------------------------------------------------------------
-# HHL algorithm configurations
+# HHL algorithm configurations (new API: no state_prep or readout)
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="session")
-def hhl_measure_x_classical(state_prep):
-    return HHL(state_prep=state_prep, readout="measure_x", num_qpe_qubits=4, eig_oracle="classical")
+def hhl_classical():
+    return HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle())
 
 
 @pytest.fixture(scope="session")
-def hhl_measure_x_quantum(state_prep):
-    return HHL(state_prep=state_prep, readout="measure_x", num_qpe_qubits=4, eig_oracle="quantum")
+def hhl_quantum():
+    return HHL(num_qpe_qubits=4, eig_oracle=QuantumEigOracle())
 
 
 @pytest.fixture(scope="session")
-def hhl_swap_test_classical(state_prep):
-    return HHL(state_prep=state_prep, readout="swap_test", num_qpe_qubits=4, eig_oracle="classical")
+def hhl_unary():
+    return HHL(num_qpe_qubits=4, eig_oracle=UnaryEigOracle())
 
 
 @pytest.fixture(scope="session")
-def hhl_measure_x_unary(state_prep):
-    return HHL(state_prep=state_prep, readout="measure_x", num_qpe_qubits=4, eig_oracle="unary")
-
-
-@pytest.fixture(scope="session")
-def hhl_3qpe_measure_x(state_prep):
-    return HHL(state_prep=state_prep, readout="measure_x", num_qpe_qubits=3, eig_oracle="classical")
+def hhl_3qpe():
+    return HHL(num_qpe_qubits=3, eig_oracle=ClassicalEigOracle())

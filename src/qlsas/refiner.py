@@ -4,7 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import numpy.linalg as LA
 
-from qlsas.solver import QuantumLinearSolver
+from qlsas.solver import QuantumLinearSolver, SolveResult
+from qlsas.post_processor import norm_estimation
 
 
 class Refiner:
@@ -66,14 +67,15 @@ class Refiner:
                 new_r             = nabla * r
                 A_normalized      = A / LA.norm(new_r)
                 new_r_normalized  = new_r / LA.norm(new_r)
-                new_x             = self.solver.solve(A_normalized, new_r_normalized, verbose=verbose, t0=t0, C=C)
+                solve_result      = self.solver.solve(A_normalized, new_r_normalized, verbose=verbose, t0=t0, C=C)
+                new_x             = solve_result.solution
                 circuit_list.append(self.solver.transpiled_circuit)
                 shot_stats_list.append({
-                    'total_shots_submitted': getattr(self.solver, 'last_total_shots_submitted', None),
-                    'total_successful_seen': getattr(self.solver, 'last_total_successful_seen', None),
-                    'success_probability': getattr(self.solver, 'last_success_probability', None),
+                    'total_shots_submitted': solve_result.metadata.get('total_shots_submitted'),
+                    'total_successful_seen': solve_result.metadata.get('total_successful_seen'),
+                    'success_probability': solve_result.success_rate,
                 })
-                alpha             = self.norm_estimation(A, new_r, new_x)
+                alpha             = norm_estimation(A, new_r, new_x)
                 x                += (alpha / nabla) * new_x
                 x_list.append(x)
                 x_normalized      = x / LA.norm(x)
@@ -137,11 +139,5 @@ class Refiner:
         return final_result
     
     def norm_estimation(self, A, b, x):
-        v = A @ x
-        denominator = np.dot(v, v)
-        if denominator == 0:
-            # If denominator is zero, the vector x is in the null space of A
-            # This indicates a degenerate case. Return a small value to continue iteration.
-            # In practice, this might indicate the system is ill-conditioned.
-            return 1e-10  # Use a smaller value for better numerical stability
-        return np.dot(v, b) / denominator
+        """Delegate to the shared :func:`~qlsas.post_processor.norm_estimation`."""
+        return norm_estimation(A, b, x)

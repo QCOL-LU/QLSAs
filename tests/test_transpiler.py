@@ -7,8 +7,9 @@ from pytket.circuit import Circuit as TketCircuit
 
 from qlsas.quantinuum_config import QuantinuumBackendConfig
 from qlsas.transpiler import Transpiler
-from qlsas.data_loader import StatePrep
-from qlsas.algorithms.hhl.hhl import HHL
+from qlsas.state_prep import StatePrep, DefaultStatePrep
+from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.readout import MeasureXReadout
 
 
 # ---------------------------------------------------------------------------
@@ -16,12 +17,14 @@ from qlsas.algorithms.hhl.hhl import HHL
 # ---------------------------------------------------------------------------
 
 def _small_hhl_circuit() -> QuantumCircuit:
-    """Build a small 2x2 HHL circuit for transpilation tests."""
-    sp = StatePrep(method="default")
-    hhl = HHL(state_prep=sp, readout="measure_x", num_qpe_qubits=3, eig_oracle="classical")
+    """Build a small 2x2 HHL circuit (with readout) for transpilation tests."""
+    sp = DefaultStatePrep()
+    hhl = HHL(num_qpe_qubits=3, eig_oracle=ClassicalEigOracle())
     A = np.array([[2.0, 1.0], [1.0, 3.0]])
     b = np.array([1.0, 0.0])
-    return hhl.build_circuit(A, b)
+    qlsa_circuit = hhl.build_circuit(A, b, sp)
+    readout = MeasureXReadout()
+    return readout.apply(qlsa_circuit)
 
 
 # ===================================================================

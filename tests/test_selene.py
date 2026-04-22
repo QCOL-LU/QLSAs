@@ -1,7 +1,7 @@
 """End-to-end correctness tests for the Quantinuum / Selene execution path.
 
-These tests run the full pipeline (circuit build → pytket transpile → Guppy
-Selene emulation → post-processing) and verify *solution quality*, not just
+These tests run the full pipeline (circuit build -> pytket transpile -> Guppy
+Selene emulation -> post-processing) and verify *solution quality*, not just
 that the code runs without crashing.
 
 Marked ``slow`` because Selene emulation takes a few seconds per circuit.
@@ -15,8 +15,9 @@ import numpy as np
 import numpy.linalg as LA
 import pytest
 
-from qlsas.algorithms.hhl.hhl import HHL
-from qlsas.data_loader import StatePrep
+from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.state_prep import StatePrep, DefaultStatePrep
+from qlsas.readout import MeasureXReadout
 from qlsas.quantinuum_config import QuantinuumBackendConfig
 from qlsas.transpiler import Transpiler
 from qlsas.executer import Executer
@@ -35,19 +36,16 @@ def _run_hhl_aer(
     shots: int = 2000,
 ) -> tuple[np.ndarray, float, float]:
     """Run HHL on Qiskit Aer (reference path) and return (solution, success_rate, residual)."""
-    hhl = HHL(
-        state_prep=StatePrep(method="default"),
-        readout="measure_x",
-        num_qpe_qubits=num_qpe_qubits,
-        eig_oracle="classical",
-    )
-    circuit = hhl.build_circuit(A, b)
+    sp = DefaultStatePrep()
+    hhl = HHL(num_qpe_qubits=num_qpe_qubits, eig_oracle=ClassicalEigOracle())
+    qlsa_circuit = hhl.build_circuit(A, b, sp)
+    readout = MeasureXReadout()
+    circuit = readout.apply(qlsa_circuit)
     transpiler = Transpiler(circuit=circuit, backend=aer_backend, optimization_level=1)
     transpiled = transpiler.optimize()
     executer = Executer()
     result = executer.run(transpiled, aer_backend, shots=shots, verbose=False)
-    processor = Post_Processor()
-    return processor.process_tomography(result, A, b, verbose=False)
+    return readout.process(result, A, b, verbose=False)
 
 
 def _selene_backend(circuit, seed: int = 0) -> QuantinuumBackendConfig:
@@ -68,20 +66,18 @@ def _run_hhl_selene(
     seed: int = 0,
 ) -> tuple[np.ndarray, float, float]:
     """Build, transpile, execute on Selene, and return (solution, success_rate, residual)."""
-    hhl = HHL(
-        state_prep=StatePrep(method="default"),
-        readout="measure_x",
-        num_qpe_qubits=num_qpe_qubits,
-        eig_oracle="classical",
-    )
-    circuit = hhl.build_circuit(A, b)
+    sp = DefaultStatePrep()
+    hhl = HHL(num_qpe_qubits=num_qpe_qubits, eig_oracle=ClassicalEigOracle())
+    qlsa_circuit = hhl.build_circuit(A, b, sp)
+    readout = MeasureXReadout()
+    circuit = readout.apply(qlsa_circuit)
     backend = _selene_backend(circuit, seed=seed)
 
     transpiler = Transpiler(circuit=circuit, backend=backend, optimization_level=optimization_level)
     transpiled = transpiler.optimize()
 
     executer = Executer()
-    counts = executer.run(
+    result = executer.run(
         transpiled,
         backend,
         shots=shots,
@@ -90,9 +86,7 @@ def _run_hhl_selene(
         verbose=False,
     )
 
-    processor = Post_Processor()
-    solution, success_rate, residual = processor.process_tomography(counts, A, b, verbose=False)
-    return solution, success_rate, residual
+    return readout.process(result, A, b, verbose=False)
 
 
 # ---------------------------------------------------------------------------
@@ -112,14 +106,14 @@ def hhl_2x2_problem():
 # ---------------------------------------------------------------------------
 
 class TestSeleneCorrectnessOptLevel0:
-    """Baseline: no pytket optimisation passes — circuit should always be correct."""
+    """Baseline: no pytket optimisation passes --- circuit should always be correct."""
 
     @pytest.mark.slow
     def test_2x2_residual_below_threshold(self, hhl_2x2_problem):
         A, b = hhl_2x2_problem
         _, _, residual = _run_hhl_selene(A, b, num_qpe_qubits=3, optimization_level=0)
         assert residual < 0.5, (
-            f"Selene opt_level=0 residual {residual:.4f} exceeds threshold 0.5 — "
+            f"Selene opt_level=0 residual {residual:.4f} exceeds threshold 0.5 --- "
             "circuit or post-processing is wrong."
         )
 
@@ -128,7 +122,7 @@ class TestSeleneCorrectnessOptLevel0:
         A, b = hhl_2x2_problem
         _, success_rate, _ = _run_hhl_selene(A, b, num_qpe_qubits=3, optimization_level=0)
         assert success_rate > 0.01, (
-            f"Success rate {success_rate:.4f} is effectively zero — "
+            f"Success rate {success_rate:.4f} is effectively zero --- "
             "ancilla qubit is never 1, check circuit structure."
         )
 
@@ -164,7 +158,7 @@ class TestCrossBackendConsistency:
 
     @pytest.mark.slow
     def test_aer_and_selene_solutions_agree_2x2(self, aer_backend, hhl_2x2_problem):
-        """Same 2×2 problem on Aer and Selene → similar solution, both residuals < 0.5."""
+        """Same 2x2 problem on Aer and Selene -> similar solution, both residuals < 0.5."""
         A, b = hhl_2x2_problem
 
         sol_aer, _, residual_aer = _run_hhl_aer(aer_backend, A, b, num_qpe_qubits=3, shots=3000)
@@ -183,7 +177,7 @@ class TestCrossBackendConsistency:
 
 
 class TestSelene4x4Problem:
-    """Correctness on a 4×4 system — larger than 2×2 but fast enough for CI."""
+    """Correctness on a 4x4 system --- larger than 2x2 but fast enough for CI."""
 
     @pytest.fixture(scope="class")
     def hhl_4x4_problem(self):
@@ -197,13 +191,13 @@ class TestSelene4x4Problem:
 
     @pytest.fixture(scope="class")
     def hhl_4x4_asymmetric(self):
-        """4×4 diagonal problem designed to expose Guppy endianness bugs.
+        """4x4 diagonal problem designed to expose Guppy endianness bugs.
 
         The true solution has coordinate 1 dominant and coordinate 2 near-zero.
-        If the Guppy path reverses these coordinates, residual jumps to ≈ 1.
+        If the Guppy path reverses these coordinates, residual jumps to ~ 1.
         """
         A = np.diag([1.0, 2.0, 8.0, 4.0])
-        # b mostly at coordinate 1 → solution dominated by component 1
+        # b mostly at coordinate 1 -> solution dominated by component 1
         b = np.array([0.05, 0.98, 0.05, 0.05])
         b = b / np.linalg.norm(b)
         return A, b
@@ -213,12 +207,12 @@ class TestSelene4x4Problem:
         A, b = hhl_4x4_problem
         _, _, residual = _run_hhl_selene(A, b, num_qpe_qubits=2, optimization_level=0, shots=3000)
         assert residual < 0.5, (
-            f"4×4 Selene opt_level=0 residual {residual:.4f} — baseline circuit is wrong."
+            f"4x4 Selene opt_level=0 residual {residual:.4f} --- baseline circuit is wrong."
         )
 
     @pytest.mark.slow
     def test_4x4_opt2_residual_consistent_with_opt0(self, hhl_4x4_problem):
-        """Optimisation must not degrade a noiseless 4×4 simulation."""
+        """Optimisation must not degrade a noiseless 4x4 simulation."""
         A, b = hhl_4x4_problem
         _, _, residual_0 = _run_hhl_selene(A, b, num_qpe_qubits=2, optimization_level=0, shots=3000, seed=7)
         _, _, residual_2 = _run_hhl_selene(A, b, num_qpe_qubits=2, optimization_level=2, shots=3000, seed=7)
@@ -231,10 +225,10 @@ class TestSelene4x4Problem:
         """Regression test for Guppy measure_array LSB-vs-MSB endianness.
 
         Uses a b vector strongly weighted at coordinate 1 (vs near-zero at 2).
-        Swapping coordinates 1 ↔ 2 (the endianness bug) produces residual ≫ 0.5.
+        Swapping coordinates 1 <-> 2 (the endianness bug) produces residual >> 0.5.
         """
         A, b = hhl_4x4_asymmetric
         _, _, residual = _run_hhl_selene(A, b, num_qpe_qubits=2, optimization_level=0, shots=4000)
         assert residual < 0.5, (
-            f"4×4 asymmetric Selene residual {residual:.4f} exceeds threshold."
+            f"4x4 asymmetric Selene residual {residual:.4f} exceeds threshold."
         )

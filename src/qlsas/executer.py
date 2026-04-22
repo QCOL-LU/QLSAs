@@ -11,6 +11,7 @@ from qiskit.providers.jobstatus import JobStatus
 from pytket.circuit import Circuit
 
 from qlsas.quantinuum_config import QuantinuumBackendConfig
+from qlsas.measurement_result import MeasurementResult
 from qlsas.guppy_runner import (
     RegisterInfo,
     RegisterMeasurement,
@@ -102,18 +103,18 @@ class Executer:
         register_infos: Optional[list[RegisterInfo]] = None,
         measurement_plan: Optional[list[RegisterMeasurement]] = None,
         optimization_level: int = 2,
-    ) -> Any:
-        """Run the circuit on the backend.
+    ) -> MeasurementResult:
+        """Run the circuit on the backend and return a :class:`MeasurementResult`.
 
-        For IBM backends, returns a ``SamplerPubResult``.
-        For Quantinuum backends, returns a ``dict[str, int]`` counts dict
-        ready for the post-processor.
+        The returned object exposes a uniform :meth:`~MeasurementResult.get_counts`
+        / :meth:`~MeasurementResult.get_bitstrings` interface regardless of
+        whether the backend is IBM (Aer / real hardware) or Quantinuum.
 
         ``optimization_level`` is forwarded to ``qnx.start_compile_job`` for
         Nexus cloud execution and ignored for IBM and local Selene backends.
         """
         if isinstance(backend, (BackendV2, IBMBackend)):
-            return self.run_qiskit(
+            raw = self.run_qiskit(
                 transpiled_circuit,
                 backend,
                 shots,
@@ -127,7 +128,7 @@ class Executer:
                     "Quantinuum execution. These are produced by "
                     "Transpiler.optimize_quantinuum()."
                 )
-            return self.run_quantinuum(
+            raw = self.run_quantinuum(
                 transpiled_circuit,
                 backend,
                 shots,
@@ -138,6 +139,7 @@ class Executer:
             )
         else:
             raise ValueError(f"Invalid backend type: {type(backend)}")
+        return MeasurementResult(raw)
 
     # ------------------------------------------------------------------
     # IBM / Qiskit
