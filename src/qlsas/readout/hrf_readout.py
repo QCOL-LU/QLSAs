@@ -181,6 +181,19 @@ class HRFReadout(Readout):
         residual : float
             ``‖A·solution − b‖``.
         """
+        from qlsas.measurement_result import MeasurementResult
+        if isinstance(result, (MeasurementResult, dict)) or not isinstance(result, list):
+            raise TypeError(
+                "HRFReadout.process() requires a list of N+1 post-selected probability "
+                "arrays, not a single MeasurementResult.\n\n"
+                "HRFReadout runs N+1 circuits internally and cannot be called like "
+                "MeasureXReadout. Use QuantumLinearSolver, which handles this automatically:\n\n"
+                "    solver = QuantumLinearSolver(\n"
+                "        qlsa=HHL(...), readout=HRFReadout(), backend=backend, shots=shots\n"
+                "    )\n"
+                "    result = solver.solve(A, b)   # SolveResult with .solution, .success_rate, .residual\n"
+            )
+
         try:
             from hadamard_random_forest import get_statevector  # lazy import
         except ImportError as exc:
