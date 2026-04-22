@@ -1,64 +1,57 @@
-import numpy as np
+"""Pure-computation post-processing for quantum linear solver results.
+
+:class:`Post_Processor` operates exclusively on plain ``dict[str, int]``
+counts mappings.  All backend-specific dispatch (e.g. converting a Qiskit
+``SamplerPubResult``) is handled upstream by the
+:class:`~qlsas.readout.base.Readout` strategy that owns the measurement
+registers.
+
+Module-level function
+---------------------
+:func:`norm_estimation`
+    Compute the scalar α such that α·x best fits Ax = b.
+"""
+
+from __future__ import annotations
+
 import math
+
+import numpy as np
 import numpy.linalg as LA
-from qiskit.primitives.containers import SamplerPubResult
+
+
+def norm_estimation(A: np.ndarray, b: np.ndarray, x: np.ndarray) -> float:
+    """Estimate the scalar α such that α·x best approximates the true solution.
+
+    Minimises ||A·(α·x) − b||² by solving the 1-D least-squares problem,
+    which gives α = (A·x)ᵀ b / ||A·x||².
+    """
+    v = A @ x
+    denominator = np.dot(v, v)
+    if denominator == 0:
+        return 1e-10
+    return np.dot(v, b) / denominator
 
 
 class Post_Processor:
     """Post-processing for quantum linear solver results.
 
-    Supports two result types:
-      - ``SamplerPubResult`` from Qiskit/IBM backends.
-      - ``dict[str, int]`` counts dicts from the Quantinuum/Guppy path.
+    All public methods accept plain ``dict[str, int]`` counts mappings.
+    Readout strategies are responsible for extracting counts from raw
+    backend results before calling these methods.
     """
 
-    def process_tomography(
-        self,
-        result,
-        A: np.ndarray,
-        b: np.ndarray,
-        verbose: bool = True,
-    ) -> tuple[np.ndarray, float, float]:
-        """Process the result using tomography.
-
-        Returns (solution_vector, success_rate, residual).
-        """
-        if isinstance(result, SamplerPubResult):
-            return self.process_qiskit_tomography(result, A, b, verbose=verbose)
-        elif isinstance(result, dict):
-            return self.process_quantinuum_tomography(result, A, b, verbose=verbose)
-        else:
-            raise ValueError(f"Invalid result type: {type(result)}.")
-
-    def process_swap_test(
-        self,
-        result,
-        A: np.ndarray,
-        b: np.ndarray,
-        swap_test_vector: np.ndarray,
-    ) -> tuple[float, float, float]:
-        """Process the result using the swap test.
-
-        Returns (expected_value, success_rate, residual).
-        """
-        if isinstance(result, SamplerPubResult):
-            return self.process_qiskit_swap_test(result, A, b, swap_test_vector)
-        elif isinstance(result, dict):
-            return self.swap_test_from_counts(result, A, b, swap_test_vector)
-        else:
-            raise ValueError(f"Invalid result type: {type(result)}.")
-
     # ------------------------------------------------------------------
-    # Backend-agnostic core (operates on counts dicts)
+    # norm_estimation — convenience delegate
     # ------------------------------------------------------------------
 
     def norm_estimation(self, A, b, x):
-        """Estimate the norm of x such that ||Ax - b|| is minimized."""
-        v = A @ x
-        denominator = np.dot(v, v)
-        if denominator == 0:
-            return 1e-10
-        return np.dot(v, b) / denominator
+        """Delegate to the module-level :func:`norm_estimation`."""
+        return norm_estimation(A, b, x)
+
+    # ------------------------------------------------------------------
+    # Tomography
+    # ------------------------------------------------------------------
 
     def tomography_from_counts(
         self,
@@ -66,11 +59,12 @@ class Post_Processor:
         A: np.ndarray,
         b: np.ndarray,
     ) -> tuple[np.ndarray, float, float]:
-        """Run tomography using a counts dict.
+        """Reconstruct the solution vector from a counts dict.
 
-        Keys are bitstrings: x_result bits + ancilla flag; success when
-        last bit is '1'.
-        Returns (solution, success_rate, residual).
+        Bitstring convention: ``x_result`` bits + ancilla flag as the last bit;
+        success shots have last bit ``'1'``.
+
+        Returns ``(solution, success_rate, residual)``.
         """
         x_size = int(math.log2(len(b)))
         num_successful_shots = 0
@@ -78,17 +72,23 @@ class Post_Processor:
         total_shots = sum(counts.values())
 
         for key, value in counts.items():
-            if key[-1] == '1':
+            if key[-1] == "1":
                 num_successful_shots += value
                 coord = int(key[:x_size], base=2)
                 approximate_solution[coord] = value
+
         if num_successful_shots == 0:
             raise ValueError("No successful shots.")
+
         approximate_solution = np.sqrt(approximate_solution / num_successful_shots)
         success_rate = num_successful_shots / total_shots if total_shots else 0.0
         return self._finish_tomography(
             approximate_solution, success_rate, num_successful_shots, total_shots, A, b
         )
+
+    # ------------------------------------------------------------------
+    # Swap test
+    # ------------------------------------------------------------------
 
     def swap_test_from_counts(
         self,
@@ -97,20 +97,21 @@ class Post_Processor:
         b: np.ndarray,
         swap_test_vector: np.ndarray,
     ) -> tuple[float, float, float]:
-        """Run swap-test post-processing using a counts dict.
+        """Compute the swap-test expected value from a counts dict.
 
-        Keys are bitstrings: swap_test_bit + ancilla_flag_bit; success when
-        last bit is '1'.
-        Returns (expected_value, success_rate, residual).
+        Bitstring convention: swap-test ancilla bit first, HHL ancilla flag last;
+        success shots have last bit ``'1'``.
+
+        Returns ``(expected_value, success_rate, residual)``.
         """
         correct_shots = 0
         num_swap_ones = 0
         total_shots = sum(counts.values())
 
         for key, value in counts.items():
-            if key[-1] == '1':
+            if key[-1] == "1":
                 correct_shots += value
-                if key[0] == '1':
+                if key[0] == "1":
                     num_swap_ones += value
 
         if total_shots == 0:
@@ -122,20 +123,25 @@ class Post_Processor:
         exp_value = num_swap_ones / correct_shots
 
         classical_solution = LA.solve(A, b)
-        if LA.norm(classical_solution) > 0:
-            normalized_classical = classical_solution / LA.norm(classical_solution)
-        else:
-            normalized_classical = classical_solution
-
-        if LA.norm(swap_test_vector) > 0:
-            normalized_swap = swap_test_vector / LA.norm(swap_test_vector)
-        else:
-            normalized_swap = swap_test_vector
+        normalized_classical = (
+            classical_solution / LA.norm(classical_solution)
+            if LA.norm(classical_solution) > 0
+            else classical_solution
+        )
+        normalized_swap = (
+            swap_test_vector / LA.norm(swap_test_vector)
+            if LA.norm(swap_test_vector) > 0
+            else swap_test_vector
+        )
 
         overlap = np.vdot(normalized_swap, normalized_classical)
         expected_prob = 0.5 - 0.5 * (np.abs(overlap) ** 2)
         residual = abs(exp_value - expected_prob)
         return exp_value, success_rate, residual
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
 
     def _finish_tomography(
         self,
@@ -146,13 +152,10 @@ class Post_Processor:
         A: np.ndarray,
         b: np.ndarray,
     ) -> tuple[np.ndarray, float, float]:
-        """Apply sign correction, normalization, and residual.
-
-        Returns (solution, success_rate, residual).
-        """
+        """Apply sign correction, unit-norm check, and compute residual."""
         classical_solution = LA.solve(A, b)
         for i in range(len(approximate_solution)):
-            approximate_solution[i] = approximate_solution[i] * np.sign(classical_solution[i])
+            approximate_solution[i] *= np.sign(classical_solution[i])
 
         assert np.allclose(
             sum(approximate_solution[i] ** 2 for i in range(len(approximate_solution))),
@@ -160,64 +163,7 @@ class Post_Processor:
             atol=1e-6,
         ), "Approximate solution is not normalized."
 
-        scaling_factor = self.norm_estimation(A, b, approximate_solution)
+        scaling_factor = norm_estimation(A, b, approximate_solution)
         scaled_solution = approximate_solution * scaling_factor
         residual = np.linalg.norm(b - A @ scaled_solution)
-        return approximate_solution, success_rate, residual
-
-    # ------------------------------------------------------------------
-    # Qiskit-specific (SamplerPubResult)
-    # ------------------------------------------------------------------
-
-    def process_qiskit_tomography(
-        self,
-        result: SamplerPubResult,
-        A: np.ndarray,
-        b: np.ndarray,
-        verbose: bool = True,
-    ) -> tuple[np.ndarray, float, float]:
-        counts = result.join_data(names=['ancilla_flag_result', 'x_result']).get_counts()
-
-        total_shots = sum(counts.values())
-        approximate_solution, success_rate, residual = self.tomography_from_counts(counts, A, b)
-        num_successful_shots = sum(v for k, v in counts.items() if k[-1] == '1')
-
-        if verbose:
-            print(f"total shots: {total_shots}")
-            print(f"num_successful_shots: {num_successful_shots}")
-            print(f"success rate: {success_rate}")
-            print(f"solver residual: {residual}")
-        return approximate_solution, success_rate, residual
-
-    def process_qiskit_swap_test(
-        self,
-        result: SamplerPubResult,
-        A: np.ndarray,
-        b: np.ndarray,
-        swap_test_vector: np.ndarray,
-    ) -> tuple[float, float, float]:
-        counts = result.join_data(names=['ancilla_flag_result', 'swap_test_result']).get_counts()
-        return self.swap_test_from_counts(counts, A, b, swap_test_vector)
-
-    # ------------------------------------------------------------------
-    # Quantinuum-specific (dict counts)
-    # ------------------------------------------------------------------
-
-    def process_quantinuum_tomography(
-        self,
-        counts: dict[str, int],
-        A: np.ndarray,
-        b: np.ndarray,
-        verbose: bool = True,
-    ) -> tuple[np.ndarray, float, float]:
-        """Process Quantinuum counts dict for tomography."""
-        total_shots = sum(counts.values())
-        approximate_solution, success_rate, residual = self.tomography_from_counts(counts, A, b)
-        num_successful_shots = sum(v for k, v in counts.items() if k[-1] == '1')
-
-        if verbose:
-            print(f"total shots: {total_shots}")
-            print(f"num_successful_shots: {num_successful_shots}")
-            print(f"success rate: {success_rate}")
-            print(f"solver residual: {residual}")
         return approximate_solution, success_rate, residual

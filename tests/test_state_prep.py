@@ -1,4 +1,4 @@
-"""Tests for qlsas.data_loader.StatePrep."""
+"""Tests for qlsas.state_prep.StatePrep and DefaultStatePrep."""
 
 import math
 
@@ -7,7 +7,7 @@ import pytest
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Statevector
 
-from qlsas.data_loader import StatePrep
+from qlsas.state_prep import StatePrep, DefaultStatePrep
 
 
 # ---------------------------------------------------------------------------
@@ -50,8 +50,19 @@ def test_non_unit_norm_raises(state_prep):
         state_prep.load_state(np.array([2.0, 0.0]))
 
 
-def test_invalid_method_raises():
-    sp = StatePrep(method="foo")
+# ---------------------------------------------------------------------------
+# ABC enforcement
+# ---------------------------------------------------------------------------
+
+def test_state_prep_is_abstract():
+    """StatePrep is an ABC and cannot be instantiated directly."""
+    with pytest.raises(TypeError):
+        StatePrep()  # type: ignore[abstract]
+
+
+def test_default_state_prep_is_concrete():
+    """DefaultStatePrep can be instantiated and used."""
+    sp = DefaultStatePrep()
     state = np.array([1.0, 0.0])
-    with pytest.raises(ValueError, match="Invalid method"):
-        sp.load_state(state)
+    circuit = sp.load_state(state)
+    assert isinstance(circuit, QuantumCircuit)

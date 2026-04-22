@@ -6,8 +6,9 @@ import pytest
 
 from qlsas.refiner import Refiner
 from qlsas.solver import QuantumLinearSolver
-from qlsas.data_loader import StatePrep
-from qlsas.algorithms.hhl.hhl import HHL
+from qlsas.state_prep import StatePrep, DefaultStatePrep
+from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.readout import MeasureXReadout
 
 
 # ---------------------------------------------------------------------------
@@ -19,9 +20,14 @@ def _normalized(v):
 
 
 def _make_solver(aer_backend, shots=2048):
-    sp = StatePrep(method="default")
-    hhl = HHL(state_prep=sp, readout="measure_x", num_qpe_qubits=4, eig_oracle="classical")
-    return QuantumLinearSolver(qlsa=hhl, backend=aer_backend, shots=shots)
+    hhl = HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle())
+    return QuantumLinearSolver(
+        qlsa=hhl,
+        readout=MeasureXReadout(),
+        backend=aer_backend,
+        state_prep=DefaultStatePrep(),
+        shots=shots,
+    )
 
 
 # ===================================================================
@@ -74,7 +80,7 @@ class TestRefineIntegration:
             plot=False,
             verbose=False,
         )
-        expected_keys = {"refined_x", "residuals", "errors", "total_iterations", "initial_solution", "transpiled_circuits"}
+        expected_keys = {"refined_x", "residuals", "errors", "total_iterations", "initial_solution", "transpiled_circuits", "shot_stats"}
         assert expected_keys == set(result.keys())
 
     def test_plot_false_no_error(self, aer_backend, pd_2x2, b_2):

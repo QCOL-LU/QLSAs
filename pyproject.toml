@@ -26,6 +26,11 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.0", "pytest-cov>=5.0"]
+hrf = [
+  "hadamard-random-forest @ git+https://github.com/comp-physics/Quantum-HRF-Tomography.git",
+  "treelib>=1.7.0",
+  "mthree==3.0.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
