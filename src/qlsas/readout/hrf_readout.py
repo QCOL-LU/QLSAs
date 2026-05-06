@@ -18,13 +18,19 @@ import numpy as np
 from qiskit import ClassicalRegister, QuantumCircuit
 
 from qlsas.post_processor import norm_estimation
-from qlsas.readout.base import Readout, QLSACircuit
+from qlsas.readout.base import (
+    MultiCircuitReadout,
+    QLSACircuit,
+    Readout,
+    SuccessCriterion,
+    TomographyResult,
+)
 
 if TYPE_CHECKING:
     from qlsas.measurement_result import MeasurementResult
 
 
-class HRFReadout(Readout):
+class HRFReadout(MultiCircuitReadout):
     """Reconstruct the HHL solution via Hadamard Random Forest (HRF) tomography.
 
     Standard tomography requires O(3^N) circuits to reconstruct an N-qubit state.
@@ -60,6 +66,7 @@ class HRFReadout(Readout):
         self._solution_register = None
         self._ancilla_register = None
         self._base_circuit_core: QuantumCircuit | None = None
+        self._success_criterion: SuccessCriterion | None = None
 
     # ------------------------------------------------------------------
     # Readout interface
@@ -109,6 +116,7 @@ class HRFReadout(Readout):
         self._ancilla_creg_name = qlsa_circuit.ancilla_creg.name
         self._solution_register = qlsa_circuit.solution_register
         self._ancilla_register = qlsa_circuit.ancilla_register
+        self._success_criterion = qlsa_circuit.success_criterion
         # Keep the pre-measurement core so build_hrf_circuits() can compose H variants
         self._base_circuit_core = qlsa_circuit.circuit.copy()
 
@@ -159,7 +167,7 @@ class HRFReadout(Readout):
         A: np.ndarray,
         b: np.ndarray,
         verbose: bool = True,
-    ) -> tuple[np.ndarray, float, float]:
+    ) -> TomographyResult:
         """Reconstruct the solution from post-selected probability distributions.
 
         Parameters
@@ -173,14 +181,28 @@ class HRFReadout(Readout):
 
         Returns
         -------
-        solution : ndarray
-            Reconstructed and physically-scaled solution vector.
-        success_rate : float
-            Placeholder (``nan``); the caller (:meth:`~qlsas.solver.QuantumLinearSolver._solve_hrf`)
-            computes the actual ancilla success rate and stores it in :class:`~qlsas.solver.SolveResult`.
-        residual : float
-            ``‖A·solution − b‖``.
+        TomographyResult
+            ``direction`` is the **unit-norm** reconstructed solution; ``alpha``
+            is the least-squares scale fitting ``A·(α·direction) ≈ b``.
+            ``success_rate`` is ``nan`` here — the actual rate is computed
+            by :meth:`combine_results` (or, for the legacy in-solver path,
+            :meth:`~qlsas.solver.QuantumLinearSolver._solve_multi`) from the
+            per-circuit ancilla statistics. Iterable as
+            ``(direction, success_rate, residual)`` for back-compat.
         """
+        from qlsas.measurement_result import MeasurementResult
+        if isinstance(result, (MeasurementResult, dict)) or not isinstance(result, list):
+            raise TypeError(
+                "HRFReadout.process() requires a list of N+1 post-selected probability "
+                "arrays, not a single MeasurementResult.\n\n"
+                "HRFReadout runs N+1 circuits internally and cannot be called like "
+                "MeasureXReadout. Use QuantumLinearSolver, which handles this automatically:\n\n"
+                "    solver = QuantumLinearSolver(\n"
+                "        qlsa=HHL(...), readout=HRFReadout(), backend=backend, shots=shots\n"
+                "    )\n"
+                "    result = solver.solve(A, b)   # SolveResult with .solution, .success_rate, .residual\n"
+            )
+
         try:
             from hadamard_random_forest import get_statevector  # lazy import
         except ImportError as exc:
@@ -200,29 +222,35 @@ class HRFReadout(Readout):
         )
 
         # HHL solution is real; discard floating-point imaginary residue
-        solution = statevector.real
-        norm = np.linalg.norm(solution)
+        direction = statevector.real
+        norm = np.linalg.norm(direction)
         if norm < 1e-12:
             raise ValueError(
                 "HRF reconstructed a near-zero solution vector. "
                 "This usually means too few shots or an extremely low ancilla "
                 "success rate. Try increasing shots."
             )
-        solution = solution / norm
+        direction = direction / norm
 
-        alpha = norm_estimation(A, b, solution)
-        solution_scaled = alpha * solution
-        residual = float(np.linalg.norm(A @ solution_scaled - b))
+        alpha = float(norm_estimation(A, b, direction))
+        residual = float(np.linalg.norm(A @ (alpha * direction) - b))
 
         if verbose:
             print(f"HRF statevector norm (pre-scale): {norm:.4f}")
             print(f"HRF scale factor α:               {alpha:.4f}")
             print(f"solver residual:                  {residual:.6f}")
 
-        return solution_scaled, float("nan"), residual
+        return TomographyResult(
+            direction=direction,
+            alpha=alpha,
+            success_rate=float("nan"),
+            residual=residual,
+        )
 
     # ------------------------------------------------------------------
-    # Internal helper called by solver._solve_hrf
+    # Internal helper retained for the legacy apply()/build_hrf_circuits()
+    # entry points used by direct callers and existing tests. New code
+    # should go through build_circuits() + combine_results() instead.
     # ------------------------------------------------------------------
 
     def _extract_probs(
@@ -251,19 +279,17 @@ class HRFReadout(Readout):
         success_rate : float
             Fraction of total shots that had ancilla = 1.
         """
-        counts = result.get_counts(self.register_names)
+        filtered, total_good, total_shots = result.get_postselected_counts(
+            self.register_names, self._success_criterion,
+        )
         probs = np.zeros(2**n_sol, dtype=float)
-        total_good = 0
-        total_shots = sum(counts.values())
 
-        for key, count in counts.items():
-            # Bitstring format: [n_sol solution bits][1 ancilla bit]
-            # The first name in register_names (ancilla) appears at the right.
-            if key[-1] == "1":
-                sol_bits = key[:n_sol]
-                idx = int(sol_bits, 2)
-                probs[idx] += count
-                total_good += count
+        for key, count in filtered.items():
+            # Bitstring format: [n_sol solution bits][success bits...]
+            # Solution bits are always the leftmost n_sol characters.
+            sol_bits = key[:n_sol]
+            idx = int(sol_bits, 2)
+            probs[idx] += count
 
         if total_good == 0:
             raise ValueError(
@@ -273,3 +299,102 @@ class HRFReadout(Readout):
 
         success_rate = total_good / total_shots if total_shots > 0 else 0.0
         return probs / total_good, success_rate
+
+    # ------------------------------------------------------------------
+    # MultiCircuitReadout interface (stateless; preferred path)
+    # ------------------------------------------------------------------
+
+    def build_circuits(self, qlsa_circuit: QLSACircuit) -> list[QuantumCircuit]:
+        """Return the base + N Hadamard-variant circuits (stateless).
+
+        Unlike :meth:`apply` + :meth:`build_hrf_circuits` (which stash
+        per-solve metadata on the instance for backward compatibility), this
+        method takes *qlsa_circuit* explicitly and returns all N+1 circuits
+        in execution order without mutating instance state — except for
+        ``_ancilla_creg_name`` and ``_success_criterion``, which
+        :meth:`register_names` and :meth:`combine_results` consult later.
+        """
+        n_sol = len(qlsa_circuit.solution_register)
+        sol_reg = qlsa_circuit.solution_register
+        # Cache only what is needed by register_names / combine_results.
+        self._ancilla_creg_name = qlsa_circuit.ancilla_creg.name
+        self._success_criterion = qlsa_circuit.success_criterion
+        self._num_solution_qubits = n_sol
+
+        circuits: list[QuantumCircuit] = []
+
+        base = qlsa_circuit.circuit.copy()
+        base_creg = ClassicalRegister(n_sol, name=self._SOLUTION_CREG_NAME)
+        base.add_register(base_creg)
+        base.measure(sol_reg, base_creg)
+        circuits.append(base)
+
+        for iq in range(n_sol):
+            circ = qlsa_circuit.circuit.copy()
+            sol_creg = ClassicalRegister(n_sol, name=self._SOLUTION_CREG_NAME)
+            circ.add_register(sol_creg)
+            circ.h(sol_reg[iq])
+            circ.measure(sol_reg, sol_creg)
+            circuits.append(circ)
+
+        return circuits
+
+    def combine_results(
+        self,
+        results: list["MeasurementResult"],
+        A: np.ndarray,
+        b: np.ndarray,
+        success_criterion: SuccessCriterion | None = None,
+        verbose: bool = True,
+    ) -> TomographyResult:
+        """Reconstruct a :class:`TomographyResult` from N+1 circuit results.
+
+        Each entry of *results* is the raw measurement result for one
+        circuit. The first entry is the base circuit; the rest are the
+        Hadamard variants in qubit order.
+        """
+        criterion = success_criterion if success_criterion is not None else self._success_criterion
+        n_sol = self._num_solution_qubits
+
+        all_probs: list[np.ndarray] = []
+        all_rates: list[float] = []
+        for r in results:
+            probs, rate = self._postselect_probs(r, n_sol, criterion)
+            all_probs.append(probs)
+            all_rates.append(rate)
+
+        tr = self.process(all_probs, A, b, verbose=verbose)
+        # Replace the per-call NaN with the actual averaged ancilla rate
+        # and surface multi-circuit metadata for the solver/SolveResult.
+        return TomographyResult(
+            direction=tr.direction,
+            alpha=tr.alpha,
+            success_rate=float(np.mean(all_rates)),
+            residual=tr.residual,
+            metadata={
+                "num_hrf_circuits": len(results),
+                "num_trees": self.num_trees,
+            },
+        )
+
+    def _postselect_probs(
+        self,
+        result: "MeasurementResult",
+        n_sol: int,
+        success_criterion: SuccessCriterion | None,
+    ) -> tuple[np.ndarray, float]:
+        """Stateless variant of :meth:`_extract_probs` taking the criterion explicitly."""
+        filtered, total_good, total_shots = result.get_postselected_counts(
+            self.register_names, success_criterion,
+        )
+        probs = np.zeros(2**n_sol, dtype=float)
+        for key, count in filtered.items():
+            sol_bits = key[:n_sol]
+            probs[int(sol_bits, 2)] += count
+        if total_good == 0:
+            raise ValueError(
+                "No successful ancilla shots found in HRF circuit. "
+                "Increase shots or check the circuit."
+            )
+        rate = total_good / total_shots if total_shots > 0 else 0.0
+        return probs / total_good, rate

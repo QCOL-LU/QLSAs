@@ -9,7 +9,7 @@ from qiskit.circuit.library import HamiltonianGate
 from qiskit.synthesis.qft import synth_qft_full
 
 from qlsas.algorithms.base import QLSA
-from qlsas.readout.base import QLSACircuit
+from qlsas.readout.base import QLSACircuit, SuccessCriterion
 from qlsas.algorithms.hhl.eig_oracles import EigOracle, ClassicalEigOracle
 from qlsas.algorithms.hhl.hhl_helpers import dynamic_t0, C_factor
 
@@ -178,6 +178,10 @@ class HHL(QLSA):
             solution_register=b_to_x_register,
             ancilla_register=ancilla_flag_register,
             ancilla_creg=ancilla_flag_result,
+            success_criterion=SuccessCriterion(
+                registers=[ancilla_flag_result],
+                required_values=["1"],
+            ),
             params={"t0": t0, "C": C},
         )
 

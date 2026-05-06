@@ -1,7 +1,7 @@
 Metadata-Version: 2.4
 Name: qlsas
 Version: 0.1.0
-Summary: Quantum Linear Solver Algorithms
+Summary: A toolkit for running Quantum Linear Systems Algorithms (QLSAs) on quantum hardware
 License: MIT License
         
         Copyright (c) 2025 Lehigh University QCOL
@@ -36,7 +36,6 @@ Requires-Dist: qiskit-ibm-runtime>=0.45
 Requires-Dist: pylatexenc==2.10.0
 Requires-Dist: pytket>=2.3.2
 Requires-Dist: pytket-qiskit>=0.67
-Requires-Dist: pytket-quantinuum>=0.40
 Requires-Dist: qnexus>=0.15.0
 Requires-Dist: guppylang>=0.21
 Requires-Dist: selene-sim>=0.2
@@ -45,13 +44,13 @@ Requires-Dist: pytest>=8.0; extra == "test"
 Requires-Dist: pytest-cov>=5.0; extra == "test"
 Dynamic: license-file
 
-# QLSA Benchmarking Suite
+# QLSA Toolkit
 
-A large-scale benchmarking suite for Quantum Linear Systems Algorithms (QLSAs), supporting multiple algorithms across different quantum hardware providers.
+A toolkit for running Quantum Linear Systems Algorithms (QLSAs) on quantum hardware, supporting multiple algorithms across different quantum hardware providers.
 
 ## Overview
 
-This project benchmarks quantum linear systems algorithms including:
+Supported algorithms:
 - **HHL** (Harrow-Hassidim-Lloyd)
 - **QSVT** (Quantum Singular Value Transformation)
 - **VQLSA** (Variational Quantum Linear Systems Algorithm)

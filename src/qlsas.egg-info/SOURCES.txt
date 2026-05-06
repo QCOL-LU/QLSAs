@@ -4,10 +4,7 @@ pyproject.toml
 src/qlsas/__init__.py
 src/qlsas/data_loader.py
 src/qlsas/executer.py
-<<<<<<< HEAD
-=======
 src/qlsas/guppy_runner.py
->>>>>>> qnexus-integration-src
 src/qlsas/ibm_options.py
 src/qlsas/post_processor.py
 src/qlsas/quantinuum_config.py
@@ -23,11 +20,17 @@ src/qlsas/algorithms/__init__.py
 src/qlsas/algorithms/base.py
 src/qlsas/algorithms/hhl/hhl.py
 src/qlsas/algorithms/hhl/hhl_helpers.py
+src/qlsas/readout/__init__.py
+src/qlsas/readout/base.py
+src/qlsas/readout/measure_x.py
+src/qlsas/readout/swap_test.py
 tests/test_data_loader.py
 tests/test_executer.py
+tests/test_guppy_runner.py
 tests/test_hhl.py
 tests/test_hhl_helpers.py
 tests/test_post_processor.py
 tests/test_refiner.py
+tests/test_selene.py
 tests/test_solver.py
 tests/test_transpiler.py

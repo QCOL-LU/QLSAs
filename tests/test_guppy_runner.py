@@ -17,7 +17,7 @@ from qlsas.guppy_runner import (
     _value_to_bitstring,
     _combine_shot_results,
 )
-from qlsas.post_processor import Post_Processor
+from qlsas.post_processor import tomography_from_counts
 
 
 # ---------------------------------------------------------------------------
@@ -118,8 +118,7 @@ class TestCombineShotResults:
         counts = _combine_shot_results(raw, measure_x_plan)
         A = np.array([[2.0, 0.0], [0.0, 1.0]])
         b = np.array([1.0, 1.0]) / np.linalg.norm([1.0, 1.0])
-        pp = Post_Processor()
-        solution, success_rate, residual = pp.tomography_from_counts(counts, A, b)
+        solution, success_rate, residual = tomography_from_counts(counts, A, b)
         assert len(solution) == 2
         assert 0 <= success_rate <= 1
         assert np.isfinite(residual)
@@ -166,9 +165,8 @@ class TestBitOrderingRegression:
             "111": 50,
         }
 
-        pp = Post_Processor()
-        _, _, residual_correct = pp.tomography_from_counts(correct_counts, A, b)
-        _, _, residual_wrong = pp.tomography_from_counts(wrong_counts, A, b)
+        _, _, residual_correct = tomography_from_counts(correct_counts, A, b)
+        _, _, residual_wrong = tomography_from_counts(wrong_counts, A, b)
 
         assert residual_wrong > residual_correct, (
             f"Bit-reversed counts must produce higher residual ({residual_wrong:.4f}) "
@@ -193,8 +191,7 @@ class TestBitOrderingRegression:
             "010": 50,
         }
 
-        pp = Post_Processor()
-        solution, success_rate, residual = pp.tomography_from_counts(counts, A, b)
+        solution, success_rate, residual = tomography_from_counts(counts, A, b)
 
         assert solution[1] > solution[2], "Coord 1 should dominate (MSB-first '011')"
         assert np.isfinite(residual)

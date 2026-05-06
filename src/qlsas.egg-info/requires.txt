@@ -7,7 +7,6 @@ qiskit-ibm-runtime>=0.45
 pylatexenc==2.10.0
 pytket>=2.3.2
 pytket-qiskit>=0.67
-pytket-quantinuum>=0.40
 qnexus>=0.15.0
 guppylang>=0.21
 selene-sim>=0.2
