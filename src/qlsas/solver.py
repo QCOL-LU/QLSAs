@@ -14,7 +14,13 @@ from qlsas.executer import Executer
 from qlsas.ibm_options import IBMExecutionOptions
 from qlsas.algorithms.base import QLSA
 from qlsas.state_prep import StatePrep, DefaultStatePrep
-from qlsas.readout.base import Readout, QLSACircuit
+from qlsas.readout.base import (
+    MultiCircuitReadout,
+    QLSACircuit,
+    Readout,
+    SuccessCriterion,
+    TomographyResult,
+)
 from qlsas.measurement_result import MeasurementResult
 from qlsas.transpiler import Transpiler
 
@@ -24,11 +30,18 @@ class SolveResult:
     """Value object returned by :meth:`QuantumLinearSolver.solve`.
 
     Attributes:
-        solution: Post-processed solution vector.
-        success_rate: Fraction of shots that passed the ancilla post-selection
+        solution: Physically-scaled solution vector (``alpha * direction``)
+            for one-shot callers. Equal to :attr:`direction` when *alpha* is
+            unavailable.
+        direction: Unit-norm reconstructed solution direction. Iterative
+            refinement consumes this and computes its own scale, so swapping
+            readouts (MeasureX vs HRF) cannot leak a hidden double-scaling.
+        alpha: Least-squares scale that fits ``A·(α·direction) ≈ b``.
+            ``None`` when not available.
+        success_rate: Fraction of shots that passed the success criterion
             (``None`` when batching is not used).
         residual: Norm of the residual ``‖Ax − b‖`` (``None`` when the caller
-            does not supply *A* and *b* at construction time).
+            does not supply *A* and *b*).
         metadata: Any additional algorithm-specific diagnostics.
     """
 
@@ -36,6 +49,15 @@ class SolveResult:
     success_rate: Optional[float] = None
     residual: Optional[float] = None
     metadata: dict = field(default_factory=dict)
+    direction: Optional[np.ndarray] = None
+    alpha: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        # When the caller didn't separately supply a direction, fall back to
+        # the solution vector so .direction is never silently None for
+        # callers that expect a vector (e.g. iterative refinement).
+        if self.direction is None:
+            self.direction = self.solution
 
     # --- numpy interop ---------------------------------------------------
     # Lets existing code do  ``alpha * result``  or  ``result.shape``
@@ -137,11 +159,15 @@ class QuantumLinearSolver:
             A, b, self.state_prep, t0=t0, C=C,
         )
 
-        # 2. Append readout measurements, passing state_prep for strategies
-        #    that need it (e.g. SwapTestReadout).
+        # 2. Multi-circuit readouts (HRF, future shadow tomography, ...) own
+        #    their own circuit-build → execute → combine flow.
+        if isinstance(self.readout, MultiCircuitReadout):
+            return self._solve_multi(qlsa_circuit, A, b, verbose=verbose)
+
+        # 3. Single-circuit path: append readout measurements, transpile,
+        #    execute, post-process.
         self.circuit = self.readout.apply(qlsa_circuit, state_prep=self.state_prep)
 
-        # 3. Transpile
         transpiler = Transpiler(
             circuit=self.circuit,
             backend=self.backend,
@@ -149,113 +175,82 @@ class QuantumLinearSolver:
         )
         self.transpiled_circuit = transpiler.optimize()
 
-        # 4. Execute + post-process
-        from qlsas.readout.hrf_readout import HRFReadout
-        if isinstance(self.readout, HRFReadout):
-            return self._solve_hrf(qlsa_circuit, transpiler, A, b, verbose=verbose)
-
         if self.target_successful_shots is not None:
             return self._solve_until_successful_shots(
                 self.transpiled_circuit, A, b, verbose=verbose,
                 transpiler=transpiler,
+                success_criterion=qlsa_circuit.success_criterion,
             )
 
         result = self._execute(transpiler, verbose=verbose)
-        solution = self.readout.process(result, A, b, verbose=verbose)[0]
-        return SolveResult(solution=solution)
+        return _to_solve_result(self.readout.process(result, A, b, verbose=verbose))
 
     # ------------------------------------------------------------------
-    # HRF multi-circuit solve path
+    # Multi-circuit solve path (HRF and any future shadow-tomography-style readout)
     # ------------------------------------------------------------------
 
-    def _solve_hrf(
+    def _solve_multi(
         self,
         qlsa_circuit: QLSACircuit,
-        base_transpiler: "Transpiler",
         A: np.ndarray,
         b: np.ndarray,
         verbose: bool = True,
-    ) -> "SolveResult":
-        """Run the N+1-circuit HRF tomography workflow.
+    ) -> SolveResult:
+        """Run the build_circuits → execute-each → combine_results workflow.
 
-        Executes the base measurement circuit followed by one Hadamard-variant
-        circuit per solution qubit, post-selects on ancilla success, and
-        reconstructs the solution via majority-vote sign recovery.
-
-        Parameters
-        ----------
-        qlsa_circuit : QLSACircuit
-            Core HHL circuit (output of ``qlsa.build_circuit``).
-        base_transpiler : Transpiler
-            Pre-built transpiler whose ``.optimize()`` result is already stored
-            in ``self.transpiled_circuit``.
+        Generic over any :class:`~qlsas.readout.base.MultiCircuitReadout`
+        implementation; no HRF-specific knowledge.
         """
-        from qlsas.readout.hrf_readout import HRFReadout
-        readout: HRFReadout = self.readout
+        readout: MultiCircuitReadout = self.readout
 
         if self.target_successful_shots is not None:
             raise ValueError(
-                "target_successful_shots is not supported with HRFReadout. "
-                "HRF requires a fixed shot budget across all N+1 circuits."
+                f"target_successful_shots is not supported with "
+                f"{type(readout).__name__}. Multi-circuit readouts require a "
+                f"fixed shot budget across all circuits."
             )
         if self._is_quantinuum:
             raise NotImplementedError(
-                "HRFReadout does not yet support Quantinuum backends."
+                f"{type(readout).__name__} does not yet support Quantinuum backends."
             )
 
-        n_sol = len(qlsa_circuit.solution_register)
-        base_transpiled = self.transpiled_circuit  # set by solve() before this call
-
-        # --- Build and transpile the N Hadamard-variant circuits ---
-        h_circuits = readout.build_hrf_circuits()
-        h_transpilers: list[Transpiler] = []
-        h_transpiled = []
-        for hc in h_circuits:
+        circuits = readout.build_circuits(qlsa_circuit)
+        results: list[MeasurementResult] = []
+        transpiled_circuits = []
+        for circ in circuits:
             t = Transpiler(
-                circuit=hc,
+                circuit=circ,
                 backend=self.backend,
                 optimization_level=self.optimization_level,
             )
-            h_transpilers.append(t)
-            h_transpiled.append(t.optimize())
-
-        # --- Execute base circuit ---
-        self.transpiled_circuit = base_transpiled
-        base_result = self._execute(base_transpiler, verbose=verbose)
-        base_probs, base_rate = readout._extract_probs(base_result, n_sol)
-
-        # --- Execute each Hadamard-variant circuit ---
-        h_samples: list[np.ndarray] = []
-        h_rates: list[float] = []
-        for t, tc in zip(h_transpilers, h_transpiled):
+            tc = t.optimize()
+            transpiled_circuits.append(tc)
             self.transpiled_circuit = tc
-            result = self._execute(t, verbose=verbose)
-            probs, rate = readout._extract_probs(result, n_sol)
-            h_samples.append(probs)
-            h_rates.append(rate)
+            results.append(self._execute(t, verbose=verbose))
 
-        # Restore base so self.transpiled_circuit is sensible after solve()
-        self.transpiled_circuit = base_transpiled
+        # Restore the base circuit's transpiled form so self.transpiled_circuit
+        # is sensible after solve() (refiner stashes it per iteration).
+        self.transpiled_circuit = transpiled_circuits[0]
 
-        all_samples = [base_probs] + h_samples
-        avg_success_rate = float(np.mean([base_rate] + h_rates))
-
-        solution_scaled, _, residual = readout.process(
-            all_samples, A, b, verbose=verbose
+        tr = readout.combine_results(
+            results, A, b,
+            success_criterion=qlsa_circuit.success_criterion,
+            verbose=verbose,
         )
 
         if verbose:
             print(
-                f"HRF: ran {n_sol + 1} circuits "
-                f"(1 base + {n_sol} Hadamard variants), "
-                f"avg ancilla success rate: {avg_success_rate:.3f}"
+                f"{type(readout).__name__}: ran {len(circuits)} circuits, "
+                f"avg success rate: {tr.success_rate:.3f}"
             )
 
         return SolveResult(
-            solution=solution_scaled,
-            success_rate=avg_success_rate,
-            residual=residual,
-            metadata={"num_hrf_circuits": n_sol + 1, "num_trees": readout.num_trees},
+            solution=tr.scaled,
+            direction=tr.direction,
+            alpha=tr.alpha,
+            success_rate=tr.success_rate,
+            residual=tr.residual,
+            metadata=dict(tr.metadata),
         )
 
     # ------------------------------------------------------------------
@@ -295,13 +290,16 @@ class QuantumLinearSolver:
         b: np.ndarray,
         verbose: bool = True,
         transpiler: Transpiler | None = None,
+        success_criterion: SuccessCriterion | None = None,
     ) -> SolveResult:
         if self._is_quantinuum:
             return self._quantinuum_successful_shots(
                 A, b, verbose=verbose, transpiler=transpiler,
+                success_criterion=success_criterion,
             )
         return self._ibm_successful_shots(
             transpiled_circuit, A, b, verbose=verbose,
+            success_criterion=success_criterion,
         )
 
     def _quantinuum_successful_shots(
@@ -310,14 +308,18 @@ class QuantumLinearSolver:
         b: np.ndarray,
         verbose: bool = True,
         transpiler: Transpiler | None = None,
+        success_criterion: SuccessCriterion | None = None,
     ) -> SolveResult:
         assert transpiler is not None
         total_shots = self.max_total_shots or self.shots
         result = self._execute(transpiler, verbose=verbose, shots=total_shots)
         counts = result.get_counts(self.readout.register_names)
-        trimmed = _trim_counts_to_target(counts, self.target_successful_shots)
-        solution = self.readout.process(MeasurementResult(trimmed), A, b, verbose=verbose)[0]
-        return SolveResult(solution=solution)
+        trimmed = _trim_counts_to_target(
+            counts, self.target_successful_shots, success_criterion,
+        )
+        return _to_solve_result(
+            self.readout.process(MeasurementResult(trimmed), A, b, verbose=verbose)
+        )
 
     def _ibm_successful_shots(
         self,
@@ -325,6 +327,7 @@ class QuantumLinearSolver:
         A: np.ndarray,
         b: np.ndarray,
         verbose: bool = True,
+        success_criterion: SuccessCriterion | None = None,
     ) -> SolveResult:
         accumulated: dict[str, int] = defaultdict(int)
         num_successful_so_far = 0
@@ -332,6 +335,8 @@ class QuantumLinearSolver:
         total_shots_submitted = 0
         total_successful_seen = 0
         batch_size = self.shots_per_batch
+
+        is_success = _success_predicate(success_criterion)
 
         opened_session = False
         if self.executer.session_active:
@@ -350,7 +355,7 @@ class QuantumLinearSolver:
                 counts = result.get_counts(self.readout.register_names)
 
                 num_batch_successful = sum(
-                    v for k, v in counts.items() if k[-1] == "1"
+                    v for k, v in counts.items() if is_success(k)
                 )
                 total_shots_submitted += sum(counts.values())
                 total_successful_seen += num_batch_successful
@@ -378,7 +383,7 @@ class QuantumLinearSolver:
                     count_found = 0
                     cutoff = 0
                     for i, bs in enumerate(bitstrings):
-                        if bs[-1] == "1":
+                        if is_success(bs):
                             count_found += 1
                         if count_found == needed:
                             cutoff = i + 1
@@ -398,7 +403,7 @@ class QuantumLinearSolver:
             if opened_session:
                 self.executer.close_session(verbose=verbose)
 
-        final_successful = sum(v for k, v in accumulated.items() if k[-1] == "1")
+        final_successful = sum(v for k, v in accumulated.items() if is_success(k))
         hit_max_limit = (
             self.max_total_shots is not None
             and total_shots_so_far >= self.max_total_shots
@@ -420,32 +425,85 @@ class QuantumLinearSolver:
         self.last_total_successful_seen = total_successful_seen
         self.last_success_probability = success_probability
 
-        solution = self.readout.process(
+        proc = self.readout.process(
             MeasurementResult(dict(accumulated)), A, b, verbose=verbose
-        )[0]
+        )
 
-        return SolveResult(
-            solution=solution,
-            success_rate=success_probability,
-            metadata={
+        return _to_solve_result(
+            proc,
+            override_success_rate=success_probability,
+            extra_metadata={
                 "total_shots_submitted": total_shots_submitted,
                 "total_successful_seen": total_successful_seen,
             },
         )
 
 
+def _to_solve_result(
+    proc_result,
+    *,
+    override_success_rate: float | None = None,
+    extra_metadata: dict | None = None,
+) -> SolveResult:
+    """Wrap a readout's ``process()`` return value into a :class:`SolveResult`.
+
+    Handles both :class:`TomographyResult` (tomography readouts) and the
+    legacy ``(value, success_rate, residual)`` tuple still returned by
+    :class:`~qlsas.readout.swap_test.SwapTestReadout`.
+    """
+    if isinstance(proc_result, TomographyResult):
+        success_rate = (
+            override_success_rate if override_success_rate is not None
+            else proc_result.success_rate
+        )
+        metadata = dict(proc_result.metadata)
+        if extra_metadata:
+            metadata.update(extra_metadata)
+        return SolveResult(
+            solution=proc_result.scaled,
+            direction=proc_result.direction,
+            alpha=proc_result.alpha,
+            success_rate=success_rate,
+            residual=proc_result.residual,
+            metadata=metadata,
+        )
+    # Legacy 3-tuple path (SwapTestReadout): (value, success_rate, residual)
+    value, success_rate, residual = proc_result
+    if override_success_rate is not None:
+        success_rate = override_success_rate
+    return SolveResult(
+        solution=value,
+        success_rate=success_rate,
+        residual=residual,
+        metadata=dict(extra_metadata or {}),
+    )
+
+
+def _success_predicate(success_criterion: SuccessCriterion | None):
+    """Return a ``str -> bool`` predicate for shot post-selection.
+
+    Falls back to the legacy ``key[-1] == "1"`` rule when no criterion is
+    supplied, preserving behaviour for synthetic tests.
+    """
+    if success_criterion is None:
+        return lambda key: bool(key) and key[-1] == "1"
+    return success_criterion.matches
+
+
 def _trim_counts_to_target(
     counts: dict[str, int],
     target_successful: int | None,
+    success_criterion: SuccessCriterion | None = None,
 ) -> dict[str, int]:
     """Keep all failed shots and exactly *target_successful* successful shots."""
     if target_successful is None:
         return counts
 
+    is_success = _success_predicate(success_criterion)
     trimmed: dict[str, int] = {}
     found = 0
     for key, count in counts.items():
-        if key[-1] != "1":
+        if not is_success(key):
             trimmed[key] = count
             continue
         if found >= target_successful:

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 from qiskit import QuantumRegister, ClassicalRegister
 
-from qlsas.readout.base import Readout, QLSACircuit
-from qlsas.post_processor import Post_Processor
+from qlsas.measurement_result import to_counts
+from qlsas.post_processor import swap_test_from_counts
+from qlsas.readout.base import Readout, QLSACircuit, SuccessCriterion
 
 
 class SwapTestReadout(Readout):
@@ -20,23 +23,20 @@ class SwapTestReadout(Readout):
         A ``StatePrep``-like object whose ``load_state(v)`` method returns a
         ``QuantumCircuit`` that prepares |v⟩.  If *None*, a *state_prep* must
         be provided when calling :meth:`apply`.
-    post_processor : Post_Processor, optional
-        Custom post-processor instance.  Defaults to a fresh
-        :class:`~qlsas.post_processor.Post_Processor`.
     """
 
-    # Classical registers joined for post-processing (ancilla flag last).
+    # Classical registers joined for post-processing (ancilla flag first
+    # so its bit is the LSB / rightmost character of each bitstring).
     _REGISTER_NAMES: list[str] = ["ancilla_flag_result", "swap_test_result"]
 
     def __init__(
         self,
         swap_test_vector: np.ndarray,
         state_prep=None,
-        post_processor: Post_Processor | None = None,
     ) -> None:
         self.swap_test_vector = swap_test_vector
         self._default_state_prep = state_prep
-        self._pp = post_processor or Post_Processor()
+        self._success_criterion: Optional[SuccessCriterion] = None
 
     # ------------------------------------------------------------------
     # Readout interface
@@ -70,6 +70,7 @@ class SwapTestReadout(Readout):
                 "vector.  Either pass one at construction time or supply one "
                 "via the state_prep keyword argument of apply()."
             )
+        self._success_criterion = qlsa_circuit.success_criterion
 
         circ = qlsa_circuit.circuit.copy()
         sol_reg = qlsa_circuit.solution_register
@@ -104,23 +105,9 @@ class SwapTestReadout(Readout):
         b: np.ndarray,
         verbose: bool = True,
     ) -> tuple[float, float, float]:
-        """Compute the swap-test expected value from measurement counts.
-
-        Parameters
-        ----------
-        result : MeasurementResult or dict
-            Wrapped measurement result.
-        """
-        counts = _to_counts(result, self._REGISTER_NAMES)
-        return self._pp.swap_test_from_counts(counts, A, b, self.swap_test_vector)
-
-
-# ---------------------------------------------------------------------------
-# Module-private helper
-# ---------------------------------------------------------------------------
-
-def _to_counts(result, register_names: list[str]) -> dict[str, int]:
-    """Extract a plain ``dict[str, int]`` from a *result* of any supported type."""
-    if isinstance(result, dict):
-        return result
-    return result.get_counts(register_names)
+        """Compute the swap-test expected value from measurement counts."""
+        counts = to_counts(result, self._REGISTER_NAMES)
+        return swap_test_from_counts(
+            counts, A, b, self.swap_test_vector,
+            success_criterion=self._success_criterion,
+        )

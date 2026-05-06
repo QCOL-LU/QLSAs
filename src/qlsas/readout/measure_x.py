@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 from qiskit import ClassicalRegister
 
-from qlsas.readout.base import Readout, QLSACircuit
-from qlsas.post_processor import Post_Processor
+from qlsas.measurement_result import to_counts
+from qlsas.post_processor import tomography_from_counts
+from qlsas.readout.base import (
+    Readout,
+    QLSACircuit,
+    SuccessCriterion,
+    TomographyResult,
+)
 
 
 class MeasureXReadout(Readout):
@@ -16,12 +24,14 @@ class MeasureXReadout(Readout):
     (frequency counting on the successful-ancilla subspace).
     """
 
-    # Classical registers joined for post-processing (ancilla flag last so
+    # Classical registers joined for post-processing (ancilla flag first so
     # its bit is the LSB / rightmost character of each bitstring).
     _REGISTER_NAMES: list[str] = ["ancilla_flag_result", "x_result"]
 
-    def __init__(self, post_processor: Post_Processor | None = None) -> None:
-        self._pp = post_processor or Post_Processor()
+    def __init__(self) -> None:
+        # Stashed by apply() so process() can route post-selection through
+        # the QLSA's SuccessCriterion (None for tests with synthetic counts).
+        self._success_criterion: Optional[SuccessCriterion] = None
 
     # ------------------------------------------------------------------
     # Readout interface
@@ -37,6 +47,7 @@ class MeasureXReadout(Readout):
         *,
         state_prep=None,  # not used by this readout; accepted for interface compat
     ):
+        self._success_criterion = qlsa_circuit.success_criterion
         circ = qlsa_circuit.circuit.copy()
         x_result = ClassicalRegister(
             len(qlsa_circuit.solution_register), name="x_result"
@@ -51,7 +62,7 @@ class MeasureXReadout(Readout):
         A: np.ndarray,
         b: np.ndarray,
         verbose: bool = True,
-    ) -> tuple[np.ndarray, float, float]:
+    ) -> TomographyResult:
         """Reconstruct the solution vector from measurement counts.
 
         Parameters
@@ -59,30 +70,24 @@ class MeasureXReadout(Readout):
         result : MeasurementResult or dict
             Wrapped measurement result.  A plain ``dict`` is also accepted for
             convenience (e.g. when passing already-extracted counts).
+
+        Returns
+        -------
+        TomographyResult
+            Iterable as ``(direction, success_rate, residual)`` for
+            backward-compatible tuple unpacking.
         """
-        counts = _to_counts(result, self._REGISTER_NAMES)
-        solution, success_rate, residual = self._pp.tomography_from_counts(
-            counts, A, b
+        counts = to_counts(result, self._REGISTER_NAMES)
+        tr = tomography_from_counts(
+            counts, A, b, success_criterion=self._success_criterion
         )
 
         if verbose:
             total_shots = sum(counts.values())
-            num_successful = sum(v for k, v in counts.items() if k[-1] == "1")
+            num_successful = int(round(tr.success_rate * total_shots))
             print(f"total shots: {total_shots}")
             print(f"num_successful_shots: {num_successful}")
-            print(f"success rate: {success_rate}")
-            print(f"solver residual: {residual}")
+            print(f"success rate: {tr.success_rate}")
+            print(f"solver residual: {tr.residual}")
 
-        return solution, success_rate, residual
-
-
-# ---------------------------------------------------------------------------
-# Module-private helper
-# ---------------------------------------------------------------------------
-
-def _to_counts(result, register_names: list[str]) -> dict[str, int]:
-    """Extract a plain ``dict[str, int]`` from a *result* of any supported type."""
-    if isinstance(result, dict):
-        return result
-    # MeasurementResult (or anything with get_counts)
-    return result.get_counts(register_names)
+        return tr

@@ -12,7 +12,7 @@ Nexus cloud (``use_local_emulator=False``)
     ``qnx.start_execute_job`` → ``BackendResult`` → counts dict.
 
 Both paths return a ``dict[str, int]`` counts dict compatible with
-:class:`~qlsas.post_processor.Post_Processor`.
+:func:`qlsas.post_processor.tomography_from_counts`.
 """
 
 from __future__ import annotations
@@ -381,7 +381,7 @@ def run_nexus_pytket(
 
     Uploads the (minimally preprocessed) pytket circuit, runs a Nexus
     compile job to apply the device-native compilation pass, then submits
-    an execute job and returns a counts dict ready for Post_Processor.
+    an execute job and returns a counts dict ready for tomography_from_counts.
 
     Args:
         pytket_circuit: Circuit WITH measurements from ``prepare_pytket_circuit_for_nexus``.
@@ -474,7 +474,7 @@ def _parse_backend_result(
 
     Assembles classical bits from each register in the same order used by
     ``_combine_shot_results`` (reversed ``measurement_plan``), producing
-    bitstrings compatible with Post_Processor.
+    bitstrings compatible with tomography_from_counts.
     """
     from pytket.circuit import Bit
 

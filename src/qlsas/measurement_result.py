@@ -13,7 +13,24 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from qlsas.readout.base import SuccessCriterion
+
+
+def to_counts(result: Any, register_names: list[str]) -> dict[str, int]:
+    """Extract a plain ``dict[str, int]`` from a result of any supported type.
+
+    Accepts a :class:`MeasurementResult`, a Qiskit ``SamplerPubResult``, or a
+    plain dict (for tests / cached results). Centralised here so readouts
+    don't each carry their own copy.
+    """
+    if isinstance(result, dict):
+        return result
+    if isinstance(result, MeasurementResult):
+        return result.get_counts(register_names)
+    return MeasurementResult(result).get_counts(register_names)
 
 
 class MeasurementResult:
@@ -89,6 +106,31 @@ class MeasurementResult:
             f"Unsupported result type: {type(self._raw)}.  "
             "Expected a SamplerPubResult or dict."
         )
+
+    # ------------------------------------------------------------------
+    # Post-selection
+    # ------------------------------------------------------------------
+
+    def get_postselected_counts(
+        self,
+        register_names: list[str],
+        success_criterion: "SuccessCriterion | None",
+    ) -> tuple[dict[str, int], int, int]:
+        """Filter to successful shots; return ``(filtered_counts, num_successful, total)``.
+
+        If *success_criterion* is ``None``, falls back to the legacy HHL
+        convention of treating ``key[-1] == "1"`` as success.
+        """
+        counts = self.get_counts(register_names)
+        total = sum(counts.values())
+        if success_criterion is None:
+            filtered = {k: v for k, v in counts.items() if k and k[-1] == "1"}
+        else:
+            filtered = {
+                k: v for k, v in counts.items() if success_criterion.matches(k)
+            }
+        num_successful = sum(filtered.values())
+        return filtered, num_successful, total
 
     # ------------------------------------------------------------------
     # Dunder helpers

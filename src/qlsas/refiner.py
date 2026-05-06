@@ -68,7 +68,10 @@ class Refiner:
                 A_normalized      = A / LA.norm(new_r)
                 new_r_normalized  = new_r / LA.norm(new_r)
                 solve_result      = self.solver.solve(A_normalized, new_r_normalized, verbose=verbose, t0=t0, C=C)
-                new_x             = solve_result.solution
+                # Iterative refinement consumes the unit-norm direction and
+                # computes its own scale (alpha) below — independent of any
+                # scale baked into the readout's SolveResult.solution.
+                new_x             = solve_result.direction
                 circuit_list.append(self.solver.transpiled_circuit)
                 shot_stats_list.append({
                     'total_shots_submitted': solve_result.metadata.get('total_shots_submitted'),
