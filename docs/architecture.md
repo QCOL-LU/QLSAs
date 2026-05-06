@@ -343,11 +343,7 @@ The refactor preserved every public surface that had test coverage. In particula
 - `tomography_from_counts(counts, A, b)` (without `success_criterion`) still works and uses the legacy fallback.
 - `Readout.process(result, A, b)` callers that did `solution, success_rate, residual = readout.process(...)` keep working — `TomographyResult` is iterable as a 3-tuple.
 - `SolveResult.solution` keeps returning the scaled vector. Existing `np.asarray(result)`, `alpha * result`, etc. continue to work via the dataclass's numpy-interop dunders.
-- `HRFReadout.apply()`, `HRFReadout.build_hrf_circuits()`, `HRFReadout._extract_probs()`, `HRFReadout.process()` all still work — they are now thin shims around the canonical `build_circuits()` / `combine_results()` API. The HRF unit tests that assert on stashed instance state (`_base_circuit_core`, etc.) still pass.
-
-A follow-up cleanup PR can delete the HRF backward-compat shims once
-the ~6 tests that depend on internal state are migrated to the canonical
-API.
+- `HRFReadout`'s legacy single-circuit API (`apply`, `build_hrf_circuits`, `_extract_probs`, `process`) was retained as backward-compat shims in the initial refactor and **removed in the follow-up cleanup**. The canonical entry points are `build_circuits(qlsa_circuit)` and `combine_results(results, A, b, success_criterion)`. End-to-end callers go through `QuantumLinearSolver.solve()` and are unaffected by the deletion.
 
 ### Migration checklist for downstream code
 
@@ -364,7 +360,7 @@ writes a custom iterative refiner / RUS loop           | Read `.direction` (unit
 
 - 178 tests pass against `AerSimulator` + `hadamard-random-forest`.
 - New architecture tests are in [tests/test_architecture_refactor.py](../tests/test_architecture_refactor.py) — covers single + multi-register `SuccessCriterion`, `get_postselected_counts`, and a synthetic `MultiCircuitReadout` proving generic dispatch.
-- The HRF integration test `test_hrf_vs_measure_x_agreement` ([tests/test_hrf_readout.py](../tests/test_hrf_readout.py)) verifies that HRF and MeasureX agree on direction (cosine similarity > 0.8 across 8192 shots) — this is the regression net for the unit-norm-direction change in `HRFReadout.process()`.
+- The HRF integration test `test_hrf_vs_measure_x_agreement` ([tests/test_hrf_readout.py](../tests/test_hrf_readout.py)) verifies that HRF and MeasureX agree on direction (cosine similarity > 0.8 across 8192 shots) — this is the regression net for the unit-norm-direction contract in `HRFReadout.combine_results()`.
 
 ## What's not addressed by this refactor
 
