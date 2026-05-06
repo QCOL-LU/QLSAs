@@ -243,10 +243,11 @@ class MultiCircuitReadout(Readout):
     the per-circuit measurement outcomes into a :class:`TomographyResult`).
 
     The single-circuit ``apply`` / ``process`` methods inherited from
-    :class:`Readout` are not meaningful for multi-circuit strategies.
-    Subclasses may either implement them as compatibility shims or raise
+    :class:`Readout` are not meaningful for multi-circuit strategies and
+    are provided here as concrete implementations that raise
     :class:`NotImplementedError`. The solver dispatches on the
-    ``MultiCircuitReadout`` marker so single-circuit code paths are skipped.
+    ``MultiCircuitReadout`` marker so the single-circuit code paths are
+    never reached for these readouts.
     """
 
     @abstractmethod
@@ -269,3 +270,17 @@ class MultiCircuitReadout(Readout):
     ) -> TomographyResult:
         """Reconstruct the solution from per-circuit measurement results."""
         ...
+
+    def apply(self, qlsa_circuit: "QLSACircuit", *, state_prep=None) -> QuantumCircuit:
+        raise NotImplementedError(
+            f"{type(self).__name__} is a multi-circuit readout. Use "
+            f"build_circuits(qlsa_circuit) instead, or drive the solve via "
+            f"QuantumLinearSolver which dispatches automatically."
+        )
+
+    def process(self, result: Any, A: np.ndarray, b: np.ndarray, verbose: bool = True) -> Any:
+        raise NotImplementedError(
+            f"{type(self).__name__} is a multi-circuit readout. Use "
+            f"combine_results(results, A, b, success_criterion) instead, or "
+            f"drive the solve via QuantumLinearSolver which dispatches automatically."
+        )

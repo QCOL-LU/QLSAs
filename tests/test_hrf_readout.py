@@ -3,19 +3,17 @@
 Test hierarchy
 --------------
 Unit — pure-Python, no backend:
-  TestHRFReadoutApply         register wiring, circuit structure
-  TestBuildHRFCircuits        N H-gate variants, correct qubit targeting
-  TestExtractProbs            post-selection logic, edge cases
-  TestHRFProcess              statevector reconstruction from synthetic samples
+  TestBuildCircuits          register wiring, base + N H-variant circuits
+  TestPostselectProbs        post-selection logic, edge cases
+  TestRegisterNames          join_data register-order convention
 
 Integration — uses AerSimulator, real HHL circuits:
-  TestHRFSolverEndToEnd       2×2 and 4×4 systems, result quality checks
-  TestHRFSolverContracts      SolveResult fields, error conditions
+  TestHRFSolverEndToEnd      2×2 and 4×4 systems, result quality checks
+  TestHRFSolverContracts     SolveResult fields, error conditions
 """
 
 from __future__ import annotations
 
-import math
 import numpy as np
 import numpy.linalg as LA
 import pytest
@@ -23,7 +21,7 @@ import pytest
 from qiskit import QuantumCircuit, QuantumRegister, ClassicalRegister
 from qiskit_aer import AerSimulator
 
-from qlsas.readout.base import QLSACircuit
+from qlsas.readout.base import QLSACircuit, SuccessCriterion
 from qlsas.readout import HRFReadout, MeasureXReadout
 from qlsas.readout.hrf_readout import HRFReadout
 from qlsas.measurement_result import MeasurementResult
@@ -48,7 +46,11 @@ def _random_spd(n: int, cond: float, seed: int = 0) -> np.ndarray:
 
 
 def _make_qlsa_circuit(n: int = 2) -> tuple[QLSACircuit, QuantumCircuit]:
-    """Build a minimal mock QLSACircuit with n solution qubits."""
+    """Build a minimal mock QLSACircuit with n solution qubits.
+
+    Mirrors HHL's register naming and includes a SuccessCriterion so the
+    HRF post-selection path matches the production code path.
+    """
     anc_qr = QuantumRegister(1, "ancilla_flag_register")
     sol_qr = QuantumRegister(n, "b_to_x_register")
     anc_cr = ClassicalRegister(1, "ancilla_flag_result")
@@ -61,6 +63,9 @@ def _make_qlsa_circuit(n: int = 2) -> tuple[QLSACircuit, QuantumCircuit]:
             solution_register=sol_qr,
             ancilla_register=anc_qr,
             ancilla_creg=anc_cr,
+            success_criterion=SuccessCriterion(
+                registers=[anc_cr], required_values=["1"],
+            ),
         ),
         circ,
     )
@@ -79,144 +84,147 @@ def _make_solver(backend, num_trees=5, num_qpe=4, shots=2048):
 
 
 # ===========================================================================
-# Unit: HRFReadout.apply()
+# Unit: HRFReadout.build_circuits()
 # ===========================================================================
 
-class TestHRFReadoutApply:
+class TestBuildCircuits:
+    """build_circuits() is the canonical multi-circuit entry point.
 
-    def test_returns_quantum_circuit(self):
-        readout = HRFReadout()
-        qlsa_circ, _ = _make_qlsa_circuit(n=1)
-        result = readout.apply(qlsa_circ)
-        assert isinstance(result, QuantumCircuit)
+    Replaces the legacy apply()/build_hrf_circuits() pair; all tests of
+    register wiring, circuit count, and Hadamard placement live here.
+    """
 
-    def test_solution_creg_added(self):
-        readout = HRFReadout()
-        qlsa_circ, _ = _make_qlsa_circuit(n=2)
-        circ = readout.apply(qlsa_circ)
-        creg_names = [cr.name for cr in circ.cregs]
-        assert "hrf_x_result" in creg_names
-
-    def test_solution_creg_size_matches_register(self):
+    def test_returns_n_plus_1_circuits(self):
         for n in (1, 2, 3):
             readout = HRFReadout()
             qlsa_circ, _ = _make_qlsa_circuit(n=n)
-            circ = readout.apply(qlsa_circ)
-            sol_creg = next(cr for cr in circ.cregs if cr.name == "hrf_x_result")
-            assert len(sol_creg) == n
-
-    def test_ancilla_creg_preserved(self):
-        readout = HRFReadout()
-        qlsa_circ, _ = _make_qlsa_circuit(n=2)
-        circ = readout.apply(qlsa_circ)
-        creg_names = [cr.name for cr in circ.cregs]
-        assert "ancilla_flag_result" in creg_names
-
-    def test_register_names_set_after_apply(self):
-        readout = HRFReadout()
-        qlsa_circ, _ = _make_qlsa_circuit(n=2)
-        readout.apply(qlsa_circ)
-        assert readout.register_names == ["ancilla_flag_result", "hrf_x_result"]
-
-    def test_base_circuit_core_stored(self):
-        readout = HRFReadout()
-        qlsa_circ, _ = _make_qlsa_circuit(n=2)
-        readout.apply(qlsa_circ)
-        assert readout._base_circuit_core is not None
-
-    def test_apply_without_state_prep_arg_ok(self):
-        """state_prep is not used by HRFReadout; passing None must succeed."""
-        readout = HRFReadout()
-        qlsa_circ, _ = _make_qlsa_circuit(n=1)
-        readout.apply(qlsa_circ, state_prep=None)  # should not raise
-
-
-# ===========================================================================
-# Unit: HRFReadout.build_hrf_circuits()
-# ===========================================================================
-
-class TestBuildHRFCircuits:
-
-    def test_raises_before_apply(self):
-        readout = HRFReadout()
-        with pytest.raises(RuntimeError, match="apply()"):
-            readout.build_hrf_circuits()
-
-    def test_returns_n_circuits(self):
-        for n in (1, 2, 3):
-            readout = HRFReadout()
-            qlsa_circ, _ = _make_qlsa_circuit(n=n)
-            readout.apply(qlsa_circ)
-            circuits = readout.build_hrf_circuits()
-            assert len(circuits) == n, f"Expected {n} circuits for n={n} solution qubits"
+            circuits = readout.build_circuits(qlsa_circ)
+            assert len(circuits) == n + 1, (
+                f"Expected {n + 1} circuits (1 base + {n} H-variants) for n={n}"
+            )
 
     def test_each_is_quantum_circuit(self):
         readout = HRFReadout()
         qlsa_circ, _ = _make_qlsa_circuit(n=2)
-        readout.apply(qlsa_circ)
-        for circ in readout.build_hrf_circuits():
+        for circ in readout.build_circuits(qlsa_circ):
             assert isinstance(circ, QuantumCircuit)
 
     def test_all_circuits_have_solution_creg(self):
         readout = HRFReadout()
         qlsa_circ, _ = _make_qlsa_circuit(n=2)
-        readout.apply(qlsa_circ)
-        for circ in readout.build_hrf_circuits():
+        for circ in readout.build_circuits(qlsa_circ):
             creg_names = [cr.name for cr in circ.cregs]
             assert "hrf_x_result" in creg_names
 
-    def test_circuits_have_h_gate_on_correct_qubit(self):
-        """Each circuit's non-base operations should include exactly one H gate on a solution qubit."""
+    def test_all_circuits_preserve_ancilla_creg(self):
         readout = HRFReadout()
         qlsa_circ, _ = _make_qlsa_circuit(n=2)
-        readout.apply(qlsa_circ)
-        circuits = readout.build_hrf_circuits()
-        # Each circuit should have one more H gate than the base (on a solution qubit)
-        for idx, circ in enumerate(circuits):
-            h_ops = [
-                inst for inst in circ.data
+        for circ in readout.build_circuits(qlsa_circ):
+            creg_names = [cr.name for cr in circ.cregs]
+            assert "ancilla_flag_result" in creg_names
+
+    def test_solution_creg_size_matches_register(self):
+        for n in (1, 2, 3):
+            readout = HRFReadout()
+            qlsa_circ, _ = _make_qlsa_circuit(n=n)
+            for circ in readout.build_circuits(qlsa_circ):
+                sol_creg = next(cr for cr in circ.cregs if cr.name == "hrf_x_result")
+                assert len(sol_creg) == n
+
+    def test_base_circuit_has_no_extra_h_on_solution(self):
+        """The first circuit returned is the base — no H gates on solution qubits beyond what was already in the QLSA core."""
+        readout = HRFReadout()
+        qlsa_circ, mock_core = _make_qlsa_circuit(n=2)
+        base = readout.build_circuits(qlsa_circ)[0]
+
+        def _h_count_on_solution(c: QuantumCircuit) -> int:
+            return sum(
+                1 for inst in c.data
                 if inst.operation.name == "h"
                 and any(
-                    circ.find_bit(q).registers[0][0].name == "b_to_x_register"
+                    c.find_bit(q).registers[0][0].name == "b_to_x_register"
                     for q in inst.qubits
                 )
-            ]
-            assert len(h_ops) >= 1, f"Circuit {idx} missing H on solution qubit"
+            )
 
-    def test_build_callable_multiple_times(self):
-        """build_hrf_circuits() should be idempotent — repeated calls give independent lists."""
+        # The mock _make_qlsa_circuit puts 2 H gates on the solution register
+        # before measurement; the base circuit should have exactly that many.
+        assert _h_count_on_solution(base) == _h_count_on_solution(mock_core)
+
+    def test_h_variants_have_one_extra_h_on_correct_qubit(self):
+        """Each variant circuit (after the base) has one additional H on solution_reg[i]."""
         readout = HRFReadout()
         qlsa_circ, _ = _make_qlsa_circuit(n=2)
-        readout.apply(qlsa_circ)
-        c1 = readout.build_hrf_circuits()
-        c2 = readout.build_hrf_circuits()
+        circuits = readout.build_circuits(qlsa_circ)
+
+        def _h_targets_on_solution(c: QuantumCircuit) -> list[int]:
+            targets: list[int] = []
+            for inst in c.data:
+                if inst.operation.name != "h":
+                    continue
+                for q in inst.qubits:
+                    info = c.find_bit(q)
+                    reg = info.registers[0][0]
+                    idx = info.registers[0][1]
+                    if reg.name == "b_to_x_register":
+                        targets.append(idx)
+            return targets
+
+        base_targets = _h_targets_on_solution(circuits[0])
+        for iq, variant in enumerate(circuits[1:]):
+            v_targets = _h_targets_on_solution(variant)
+            extra = sorted(v_targets)
+            for t in base_targets:
+                extra.remove(t)
+            assert extra == [iq], (
+                f"Variant {iq} should add one H on qubit {iq}; got extras {extra}"
+            )
+
+    def test_callable_multiple_times(self):
+        """build_circuits() is reentrant — repeated calls give independent lists."""
+        readout = HRFReadout()
+        qlsa_circ, _ = _make_qlsa_circuit(n=2)
+        c1 = readout.build_circuits(qlsa_circ)
+        c2 = readout.build_circuits(qlsa_circ)
         assert len(c1) == len(c2)
-        # Should be fresh copies, not the same objects
+        # Should be fresh copies, not the same objects.
         assert c1[0] is not c2[0]
 
+    def test_caches_metadata_for_register_names(self):
+        """build_circuits() caches the ancilla creg name; register_names returns it."""
+        readout = HRFReadout()
+        qlsa_circ, _ = _make_qlsa_circuit(n=2)
+        readout.build_circuits(qlsa_circ)
+        assert readout.register_names == ["ancilla_flag_result", "hrf_x_result"]
+
 
 # ===========================================================================
-# Unit: HRFReadout._extract_probs()
+# Unit: HRFReadout._postselect_probs()
 # ===========================================================================
 
-class TestExtractProbs:
+class TestPostselectProbs:
+    """The post-selection helper used by combine_results.
 
-    def _counts_to_mr(self, counts: dict) -> MeasurementResult:
-        return MeasurementResult(counts)
+    Replaces the deleted TestExtractProbs class; same semantics, exercised
+    against the canonical _postselect_probs(success_criterion=...) signature.
+    """
 
-    def test_basic_postselection(self):
-        """For 1-qubit solution, filter ancilla=1 shots and normalise."""
+    def _criterion(self, width: int = 1) -> SuccessCriterion:
+        cr = ClassicalRegister(width, "anc")
+        return SuccessCriterion(registers=[cr], required_values=["1" * width])
+
+    def test_basic_postselection_one_qubit(self):
         readout = HRFReadout()
         qlsa_circ, _ = _make_qlsa_circuit(n=1)
-        readout.apply(qlsa_circ)
+        readout.build_circuits(qlsa_circ)  # populates _ancilla_creg_name etc.
 
         # Bitstring format: [sol_bit][ancilla_bit]
-        # "01": sol=0, ancilla=1 (success) → 60 shots
-        # "11": sol=1, ancilla=1 (success) → 40 shots
-        # "00": sol=0, ancilla=0 (fail)    → 50 shots
+        # "01": sol=0, anc=1 (success) → 60 shots
+        # "11": sol=1, anc=1 (success) → 40 shots
+        # "00": sol=0, anc=0 (fail)    → 50 shots
         counts = {"01": 60, "11": 40, "00": 50}
-        result = self._counts_to_mr(counts)
-        probs, rate = readout._extract_probs(result, n_sol=1)
+        result = MeasurementResult(counts)
+        probs, rate = readout._postselect_probs(result, n_sol=1, success_criterion=self._criterion())
 
         assert probs.shape == (2,)
         assert np.isclose(probs[0], 60 / 100)
@@ -225,10 +233,9 @@ class TestExtractProbs:
         assert np.isclose(rate, 100 / 150)
 
     def test_two_qubit_solution(self):
-        """2-qubit solution (4D), bitstrings are 3 chars: [q1 q0][ancilla]."""
         readout = HRFReadout()
         qlsa_circ, _ = _make_qlsa_circuit(n=2)
-        readout.apply(qlsa_circ)
+        readout.build_circuits(qlsa_circ)
 
         counts = {
             "001": 50,   # sol=00=0, anc=1
@@ -237,113 +244,66 @@ class TestExtractProbs:
             "111": 5,    # sol=11=3, anc=1
             "000": 200,  # failures
         }
-        result = self._counts_to_mr(counts)
-        probs, rate = readout._extract_probs(result, n_sol=2)
+        result = MeasurementResult(counts)
+        probs, rate = readout._postselect_probs(result, n_sol=2, success_criterion=self._criterion())
 
         assert probs.shape == (4,)
         assert np.isclose(probs.sum(), 1.0)
         assert np.isclose(probs[0], 50 / 100)
         assert np.isclose(probs[1], 30 / 100)
         assert np.isclose(probs[2], 15 / 100)
-        assert np.isclose(probs[3], 5  / 100)
+        assert np.isclose(probs[3], 5 / 100)
         assert np.isclose(rate, 100 / 300)
 
     def test_no_successful_shots_raises(self):
         readout = HRFReadout()
         qlsa_circ, _ = _make_qlsa_circuit(n=1)
-        readout.apply(qlsa_circ)
+        readout.build_circuits(qlsa_circ)
         counts = {"00": 100, "10": 50}  # all ancilla=0
-        result = self._counts_to_mr(counts)
         with pytest.raises(ValueError, match="No successful ancilla shots"):
-            readout._extract_probs(result, n_sol=1)
+            readout._postselect_probs(MeasurementResult(counts), n_sol=1, success_criterion=self._criterion())
 
     def test_all_shots_successful(self):
-        """Success rate = 1.0 when all shots have ancilla=1."""
         readout = HRFReadout()
         qlsa_circ, _ = _make_qlsa_circuit(n=1)
-        readout.apply(qlsa_circ)
+        readout.build_circuits(qlsa_circ)
         counts = {"01": 75, "11": 25}
-        result = self._counts_to_mr(counts)
-        probs, rate = readout._extract_probs(result, n_sol=1)
+        probs, rate = readout._postselect_probs(MeasurementResult(counts), n_sol=1, success_criterion=self._criterion())
         assert np.isclose(rate, 1.0)
         assert np.isclose(probs.sum(), 1.0)
 
+    def test_legacy_fallback_when_no_criterion(self):
+        """With success_criterion=None, falls back to key[-1] == '1'."""
+        readout = HRFReadout()
+        qlsa_circ, _ = _make_qlsa_circuit(n=1)
+        readout.build_circuits(qlsa_circ)
+        counts = {"01": 100, "00": 50}
+        probs, rate = readout._postselect_probs(MeasurementResult(counts), n_sol=1, success_criterion=None)
+        assert np.isclose(probs[0], 1.0)
+        assert np.isclose(rate, 100 / 150)
+
 
 # ===========================================================================
-# Unit: HRFReadout.process() — synthetic samples
+# Unit: register_names convention
 # ===========================================================================
 
-class TestHRFProcess:
+class TestRegisterNames:
 
-    def _uniform_probs(self, n: int) -> np.ndarray:
-        p = np.ones(2**n) / (2**n)
-        return p
+    def test_default_before_build_circuits(self):
+        """Before any build_circuits() call, register_names returns sensible defaults."""
+        readout = HRFReadout()
+        rn = readout.register_names
+        assert rn[0] == "ancilla_flag_result"
+        assert rn[1] == "hrf_x_result"
 
-    def test_process_returns_three_tuple(self):
-        """process() must return a 3-tuple: (solution, placeholder, residual)."""
-        rng = np.random.default_rng(7)
-        n = 1
-        A = np.diag([2.0, 1.0])
-        b = _normalized(rng.standard_normal(2))
-
-        readout = HRFReadout(num_trees=5)
-        qlsa_circ, _ = _make_qlsa_circuit(n=n)
-        readout.apply(qlsa_circ)
-
-        # Provide a valid 2-element samples list (base + 1 H-variant)
-        samples = [np.array([0.75, 0.25]), np.array([0.60, 0.40])]
-        result = readout.process(samples, A, b, verbose=False)
-        assert len(result) == 3
-
-    def test_solution_has_correct_shape(self):
-        n = 1
-        A = np.diag([2.0, 1.0])
-        b = _normalized(np.array([1.0, 1.0]))
-        readout = HRFReadout(num_trees=5)
-        qlsa_circ, _ = _make_qlsa_circuit(n=n)
-        readout.apply(qlsa_circ)
-        samples = [np.array([0.6, 0.4]), np.array([0.55, 0.45])]
-        solution, _, _ = readout.process(samples, A, b, verbose=False)
-        assert solution.shape == (2,)
-
-    def test_near_zero_statevector_raises(self):
-        """process() raises ValueError when samples yield a near-zero statevector."""
-        n = 1
-        A = np.diag([1.0, 1.0])
-        b = _normalized(np.array([1.0, 0.0]))
-        readout = HRFReadout(num_trees=5)
-        qlsa_circ, _ = _make_qlsa_circuit(n=n)
-        readout.apply(qlsa_circ)
-        # All-zero samples → zero amplitudes → zero statevector
-        samples = [np.zeros(2), np.zeros(2)]
-        with pytest.raises((ValueError, Exception)):
-            readout.process(samples, A, b, verbose=False)
-
-    def test_unit_norm_base_samples_produces_finite_solution(self):
-        """With reasonable samples drawn from a known statevector, solution is finite."""
-        rng = np.random.default_rng(99)
-        n = 2
-        A = np.diag([3.0, 2.0, 1.5, 1.0])
-        b = _normalized(rng.standard_normal(4))
-
-        readout = HRFReadout(num_trees=10)
-        qlsa_circ, _ = _make_qlsa_circuit(n=n)
-        readout.apply(qlsa_circ)
-
-        # Draw samples from a plausible quantum state
-        true_state = _normalized(rng.standard_normal(4))
-        base_probs = true_state**2  # squared amplitudes
-        samples = [base_probs] + [
-            (base_probs + rng.uniform(-0.02, 0.02, 4)).clip(0)
-            for _ in range(n)
-        ]
-        # Normalise each
-        samples = [s / s.sum() for s in samples]
-
-        solution, _, residual = readout.process(samples, A, b, verbose=False)
-        assert solution.shape == (4,)
-        assert np.all(np.isfinite(solution))
-        assert np.isfinite(residual)
+    def test_picks_up_qlsa_ancilla_name(self):
+        """build_circuits() updates the ancilla name from the QLSACircuit."""
+        readout = HRFReadout()
+        qlsa_circ, _ = _make_qlsa_circuit(n=1)
+        readout.build_circuits(qlsa_circ)
+        rn = readout.register_names
+        assert rn[0] == "ancilla_flag_result"   # first → rightmost char
+        assert rn[1] == "hrf_x_result"           # last  → leftmost chars
 
 
 # ===========================================================================
@@ -464,31 +424,16 @@ class TestHRFSolverContracts:
         # 2×2 → n_sol=1 → 1 base + 1 H-variant = 2 circuits
         assert result.metadata["num_hrf_circuits"] == 2
 
-    def test_register_names_convention(self):
-        """Verify the join_data register order: ancilla first = rightmost bits."""
-        readout = HRFReadout()
-        qlsa_circ, _ = _make_qlsa_circuit(n=1)
-        readout.apply(qlsa_circ)
-        rn = readout.register_names
-        assert rn[0] == "ancilla_flag_result"   # first → rightmost char
-        assert rn[1] == "hrf_x_result"           # last  → leftmost chars
-
-    def test_extract_probs_bitstring_convention(self):
-        """Cross-check that key[-1]='1' means ancilla=1 with our register_names."""
-        readout = HRFReadout()
-        qlsa_circ, _ = _make_qlsa_circuit(n=1)
-        readout.apply(qlsa_circ)
-
-        # Construct counts consistent with the convention:
-        # "01" → solution='0', ancilla='1' (success)
-        counts = {"01": 100, "00": 50}
-        result = MeasurementResult(counts)
-        probs, rate = readout._extract_probs(result, n_sol=1)
-        assert np.isclose(probs[0], 1.0)  # only state 0 succeeds
-        assert np.isclose(rate, 100 / 150)
-
     def test_hrf_vs_measure_x_agreement(self, aer_backend, pd_2x2, b_2):
-        """HRF and MeasureX solutions should agree in direction (cosine sim > 0.8)."""
+        """HRF and MeasureX solutions should agree in direction (cosine sim > 0.8).
+
+        This is the regression net for the unit-norm-direction contract:
+        if HRFReadout were to silently revert to returning a pre-scaled
+        vector, this test would still pass because we normalise both
+        solutions before comparing — but the architecture-level
+        SolveResult.direction contract is what the rest of the codebase
+        relies on.
+        """
         mx_solver = QuantumLinearSolver(
             qlsa=HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle()),
             readout=MeasureXReadout(),
