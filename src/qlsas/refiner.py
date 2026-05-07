@@ -65,9 +65,8 @@ class Refiner:
                 if verbose:
                     print(f"IR Iteration: {iteration}")
                 new_r             = nabla * r
-                A_normalized      = A / LA.norm(new_r)
                 new_r_normalized  = new_r / LA.norm(new_r)
-                solve_result      = self.solver.solve(A_normalized, new_r_normalized, verbose=verbose, t0=t0, C=C)
+                solve_result      = self.solver.solve(A, new_r_normalized, verbose=verbose, t0=t0, C=C)
                 # Iterative refinement consumes the unit-norm direction and
                 # computes its own scale (alpha) below — independent of any
                 # scale baked into the readout's SolveResult.solution.
