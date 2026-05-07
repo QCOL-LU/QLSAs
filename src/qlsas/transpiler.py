@@ -1,33 +1,43 @@
+"""Backwards-compatible facade over the :mod:`qlsas.backends` adapters.
+
+``Transpiler`` is now a thin coordinator: it picks the appropriate
+:class:`~qlsas.backends.base.Backend` adapter for the requested raw
+backend and delegates the actual compile work to it.  The legacy public
+API (``optimize()``, ``optimize_qiskit()``, ``optimize_quantinuum()``,
+plus the ``register_infos`` / ``measurement_plan`` attributes the solver
+threads to the executer) is preserved unchanged so that existing call
+sites and tests work without modification.
+"""
+
+from __future__ import annotations
+
 from typing import Union
 
 from qiskit import QuantumCircuit
 from qiskit_ibm_runtime import IBMBackend
 from qiskit_aer import AerSimulator
 from qiskit.providers.backend import BackendV2
-from qiskit.transpiler import generate_preset_pass_manager
 from pytket.circuit import Circuit
-from pytket.extensions.qiskit import tk_to_qiskit
 
+from qlsas.backends.base import Backend
+from qlsas.backends.dispatch import adapt
+from qlsas.backends.qiskit_backend import QiskitBackend
+from qlsas.backends.quantinuum_backend import QuantinuumBackend
+from qlsas.guppy_runner import RegisterInfo, RegisterMeasurement
 from qlsas.quantinuum_config import QuantinuumBackendConfig
-from qlsas.guppy_runner import (
-    RegisterInfo,
-    RegisterMeasurement,
-    extract_measurement_plan,
-    prepare_pytket_circuit,
-    prepare_pytket_circuit_for_nexus,
-)
 
 
 class Transpiler:
-    """Transpiler class for optimizing quantum circuits for target hardware.
+    """Coordinator that dispatches circuit optimisation to a Backend adapter.
 
-    Supports Qiskit/IBM backends and Quantinuum backends (via pytket/Guppy).
+    Kept for back-compat with existing call sites; ``Backend.compile`` is
+    the canonical entry point for new code.
     """
 
     def __init__(
         self,
         circuit: Union[QuantumCircuit, Circuit],
-        backend: Union[BackendV2, QuantinuumBackendConfig],
+        backend: Union[BackendV2, QuantinuumBackendConfig, Backend],
         optimization_level: int,
     ):
         self.circuit = circuit
@@ -36,69 +46,47 @@ class Transpiler:
         self.register_infos: list[RegisterInfo] = []
         self.measurement_plan: list[RegisterMeasurement] = []
 
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     def optimize(self) -> Union[QuantumCircuit, Circuit]:
-        """Optimize the circuit for target hardware."""
-        if isinstance(self.backend, (BackendV2, IBMBackend, AerSimulator)):
-            return self.optimize_qiskit()
-        elif isinstance(self.backend, QuantinuumBackendConfig):
-            return self.optimize_quantinuum()
-        else:
-            raise ValueError(f"Invalid backend type: {type(self.backend)}")
+        """Optimise the circuit for the configured backend.
+
+        Returns the transpiled circuit.  As a side effect, populates
+        ``self.register_infos`` and ``self.measurement_plan`` for the
+        Quantinuum path (left empty for the Qiskit path).
+        """
+        adapter = adapt(self.backend)
+        artifact = adapter.compile(self.circuit, self.optimization_level)
+        self.register_infos = artifact.backend_metadata.get("register_infos", [])
+        self.measurement_plan = artifact.backend_metadata.get("measurement_plan", [])
+        return artifact.payload
+
+    # ------------------------------------------------------------------
+    # Legacy direct paths (kept as thin shims for back-compat)
+    # ------------------------------------------------------------------
 
     def optimize_qiskit(self) -> QuantumCircuit:
-        """Optimize the circuit for IBM hardware."""
-        if self.optimization_level not in [0, 1, 2, 3]:
-            raise ValueError(
-                f"Invalid optimization level: {self.optimization_level}. "
-                "Must be 0, 1, 2, or 3."
-            )
-
-        if isinstance(self.circuit, Circuit):
-            self.circuit = tk_to_qiskit(self.circuit)
-        elif not isinstance(self.circuit, QuantumCircuit):
-            raise ValueError(
-                f"Invalid circuit type: {type(self.circuit)}. "
-                "Must be a qiskit QuantumCircuit or a pytket Circuit."
-            )
-
-        pm = generate_preset_pass_manager(
-            optimization_level=self.optimization_level, backend=self.backend
+        """Direct Qiskit-path compile.  Equivalent to :meth:`optimize` when
+        the backend is Aer / IBM."""
+        backend = self.backend
+        adapter: Backend = (
+            backend if isinstance(backend, Backend)
+            else QiskitBackend(backend)  # type: ignore[arg-type]
         )
-        return pm.run(self.circuit)
+        artifact = adapter.compile(self.circuit, self.optimization_level)
+        return artifact.payload
 
     def optimize_quantinuum(self) -> Circuit:
-        """Optimize the circuit for Quantinuum hardware via the pytket bridge.
-
-        Branches on ``backend.use_local_emulator``:
-
-        - **Local Selene**: strips measurements, applies local pytket
-          optimisation passes (``FullPeepholeOptimise(CX)`` + ``AutoRebase``),
-          and returns a measurement-free circuit for the Guppy wrapper.
-        - **Nexus cloud**: keeps measurements, applies only minimal
-          preprocessing (Aer decomposition + ``DecomposeBoxes``), and returns
-          a circuit ready for ``qnx.start_compile_job``.
-
-        Side effects:
-          - Populates ``self.register_infos`` with per-register metadata
-            (lexicographic order, matching ``load_pytket`` argument order).
-          - Populates ``self.measurement_plan`` with the register-to-classical
-            measurement mapping.
-        """
-        if isinstance(self.circuit, Circuit):
-            raise TypeError(
-                "optimize_quantinuum expects a Qiskit QuantumCircuit as input, "
-                f"got pytket Circuit. Convert with tk_to_qiskit first."
-            )
-
-        self.measurement_plan = extract_measurement_plan(self.circuit)
-
-        if self.backend.use_local_emulator:
-            pytket_circuit, self.register_infos = prepare_pytket_circuit(
-                self.circuit, optimization_level=self.optimization_level
-            )
-        else:
-            pytket_circuit, self.register_infos = prepare_pytket_circuit_for_nexus(
-                self.circuit
-            )
-
-        return pytket_circuit
+        """Direct Quantinuum-path compile.  Equivalent to :meth:`optimize`
+        when the backend is :class:`QuantinuumBackendConfig`."""
+        backend = self.backend
+        adapter: Backend = (
+            backend if isinstance(backend, Backend)
+            else QuantinuumBackend(backend)  # type: ignore[arg-type]
+        )
+        artifact = adapter.compile(self.circuit, self.optimization_level)
+        self.register_infos = artifact.backend_metadata.get("register_infos", [])
+        self.measurement_plan = artifact.backend_metadata.get("measurement_plan", [])
+        return artifact.payload

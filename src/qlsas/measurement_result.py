@@ -46,6 +46,16 @@ class MeasurementResult:
     def __init__(self, raw: Any) -> None:
         self._raw = raw
 
+    @property
+    def raw(self) -> Any:
+        """The underlying ``SamplerPubResult`` / ``dict`` / ... result.
+
+        Exposed for back-compat shims that need to return the unwrapped
+        value (e.g. ``Executer.run_qiskit``).  New code should use
+        :meth:`get_counts` / :meth:`get_bitstrings` instead.
+        """
+        return self._raw
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
