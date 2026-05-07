@@ -81,7 +81,7 @@ def ucry_eig_inversion(
     circ: QuantumCircuit,
     qpe_register: QuantumRegister,
     ancilla_qubit,
-    A: np.ndarray,
+    A: np.ndarray, # TODO: make boolean input for whether A has negative eigs
     t0: float,
     C: float,
 ):
