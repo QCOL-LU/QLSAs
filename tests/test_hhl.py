@@ -1,6 +1,7 @@
 """Tests for qlsas.algorithms.hhl.hhl.HHL."""
 
 import math
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -162,3 +163,70 @@ def test_builds_for_various_configs(pd_2x2, b_2, state_prep, num_qpe, oracle):
     assert isinstance(result, QLSACircuit)
     assert isinstance(result.circuit, QuantumCircuit)
     assert result.circuit.num_qubits == 1 + num_qpe + 1  # ancilla + qpe + 1 data qubit for 2x2
+
+
+# ===================================================================
+# Caller-supplied spectral information avoids classical eigendecomposition
+# ===================================================================
+
+class TestNoClassicalEigendecomposition:
+    """The user can avoid every internal np.linalg.eigvalsh(A) call by
+    supplying t0 (or lambda_max_bound), C (or lambda_min_bound), and
+    has_negative_eigenvalues."""
+
+    @pytest.mark.parametrize("oracle", [
+        MCRYEigOracle(),
+        UCRYEigOracle(),
+        ExactReciprocalEigOracle(),
+    ])
+    def test_explicit_t0_C_and_sign_skip_eigvalsh(self, pd_2x2, b_2, state_prep, oracle):
+        hhl = HHL(num_qpe_qubits=3, eig_oracle=oracle)
+        with patch("numpy.linalg.eigvalsh") as mock_eigvalsh:
+            hhl.build_circuit(
+                pd_2x2,
+                b_2,
+                state_prep,
+                t0=0.5,
+                C=0.1,
+                has_negative_eigenvalues=False,
+            )
+        mock_eigvalsh.assert_not_called()
+
+    def test_bounds_replace_eigvalsh(self, pd_2x2, b_2, state_prep):
+        """Supplying lambda_*_bound (not t0/C) also avoids eigvalsh."""
+        hhl = HHL(num_qpe_qubits=3)
+        with patch("numpy.linalg.eigvalsh") as mock_eigvalsh:
+            result = hhl.build_circuit(
+                pd_2x2,
+                b_2,
+                state_prep,
+                lambda_max_bound=4.0,
+                lambda_min_bound=0.5,
+                has_negative_eigenvalues=False,
+            )
+        mock_eigvalsh.assert_not_called()
+        # Resolution rules: t0 = (pi/lambda_max)*(1-0.05); C = 0.9*lambda_min
+        assert result.params["t0"] == pytest.approx((np.pi / 4.0) * 0.95)
+        assert result.params["C"] == pytest.approx(0.45)
+
+    def test_default_path_still_calls_eigvalsh(self, pd_2x2, b_2, state_prep):
+        """Backward compatibility: omitting all three kwargs preserves the
+        legacy auto-detect path."""
+        hhl = HHL(num_qpe_qubits=3, eig_oracle=MCRYEigOracle())
+        with patch("numpy.linalg.eigvalsh", wraps=np.linalg.eigvalsh) as mock_eigvalsh:
+            hhl.build_circuit(pd_2x2, b_2, state_prep)
+        assert mock_eigvalsh.call_count >= 1
+
+    def test_explicit_sign_for_indefinite(self, indefinite_2x2, b_2, state_prep):
+        """has_negative_eigenvalues=True is honoured for indefinite A."""
+        hhl = HHL(num_qpe_qubits=3, eig_oracle=UCRYEigOracle())
+        with patch("numpy.linalg.eigvalsh") as mock_eigvalsh:
+            hhl.build_circuit(
+                indefinite_2x2,
+                b_2,
+                state_prep,
+                t0=0.5,
+                C=0.1,
+                has_negative_eigenvalues=True,
+            )
+        mock_eigvalsh.assert_not_called()

@@ -26,6 +26,9 @@ class Refiner:
         verbose: bool = True,
         t0: Optional[float] = None,
         C: Optional[float] = None,
+        has_negative_eigenvalues: Optional[bool] = None,
+        lambda_max_bound: Optional[float] = None,
+        lambda_min_bound: Optional[float] = None,
         open_session: bool = True,
     ) -> dict:
         """
@@ -37,6 +40,13 @@ class Refiner:
             verbose: If True, print progress per iteration.
             t0: Optional time parameter for HHL controlled-Hamiltonian (passed to solver).
             C: Optional scaling factor for HHL controlled-Hamiltonian (passed to solver).
+            has_negative_eigenvalues: Optional sign-profile declaration for A.
+                When supplied, the eigenvalue-inversion oracle skips its
+                internal ``np.linalg.eigvalsh(A)`` call.
+            lambda_max_bound: Optional upper bound on max |eigenvalue(A)|;
+                used to derive ``t0`` without an eigendecomposition.
+            lambda_min_bound: Optional lower bound on min |eigenvalue(A)|;
+                used to derive ``C`` without an eigendecomposition.
             open_session: If True, open an IBM session (only for IBMBackends). Set to False to disable.
         Returns:
             dict with refined solution, residuals, errors, etc.
@@ -66,7 +76,16 @@ class Refiner:
                     print(f"IR Iteration: {iteration}")
                 new_r             = nabla * r
                 new_r_normalized  = new_r / LA.norm(new_r)
-                solve_result      = self.solver.solve(A, new_r_normalized, verbose=verbose, t0=t0, C=C)
+                solve_result      = self.solver.solve(
+                    A,
+                    new_r_normalized,
+                    verbose=verbose,
+                    t0=t0,
+                    C=C,
+                    has_negative_eigenvalues=has_negative_eigenvalues,
+                    lambda_max_bound=lambda_max_bound,
+                    lambda_min_bound=lambda_min_bound,
+                )
                 # Iterative refinement consumes the unit-norm direction and
                 # computes its own scale (alpha) below — independent of any
                 # scale baked into the readout's SolveResult.solution.

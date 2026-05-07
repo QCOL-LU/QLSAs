@@ -25,6 +25,7 @@ Available oracles
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Optional
 
 import numpy as np
 from qiskit import QuantumCircuit, QuantumRegister
@@ -53,6 +54,8 @@ class EigOracle(ABC):
         A: np.ndarray,
         t0: float,
         C: float,
+        *,
+        has_negative_eigenvalues: Optional[bool] = None,
     ) -> None:
         """Append eigenvalue-inversion gates to *circ*.
 
@@ -70,6 +73,10 @@ class EigOracle(ABC):
             Hamiltonian evolution time (determines the QPE phase scaling).
         C : float
             Ancilla rotation scaling factor.
+        has_negative_eigenvalues : bool, optional
+            Declares A's sign profile.  When supplied, the oracle skips its
+            internal ``np.linalg.eigvalsh(A)`` fallback.  ``None`` (default)
+            preserves the legacy auto-detect behaviour.
         """
         ...
 
@@ -97,8 +104,18 @@ class MCRYEigOracle(EigOracle):
         A: np.ndarray,
         t0: float,
         C: float,
+        *,
+        has_negative_eigenvalues: Optional[bool] = None,
     ) -> None:
-        mcry_eig_inversion(circ, qpe_register, ancilla_qubit, A=A, t0=t0, C=C)
+        mcry_eig_inversion(
+            circ,
+            qpe_register,
+            ancilla_qubit,
+            A=A,
+            t0=t0,
+            C=C,
+            has_negative_eigenvalues=has_negative_eigenvalues,
+        )
 
 
 class UCRYEigOracle(EigOracle):
@@ -122,8 +139,18 @@ class UCRYEigOracle(EigOracle):
         A: np.ndarray,
         t0: float,
         C: float,
+        *,
+        has_negative_eigenvalues: Optional[bool] = None,
     ) -> None:
-        ucry_eig_inversion(circ, qpe_register, ancilla_qubit, A=A, t0=t0, C=C)
+        ucry_eig_inversion(
+            circ,
+            qpe_register,
+            ancilla_qubit,
+            A=A,
+            t0=t0,
+            C=C,
+            has_negative_eigenvalues=has_negative_eigenvalues,
+        )
 
 
 class ExactReciprocalEigOracle(EigOracle):
@@ -153,7 +180,15 @@ class ExactReciprocalEigOracle(EigOracle):
         A: np.ndarray,
         t0: float,
         C: float,
+        *,
+        has_negative_eigenvalues: Optional[bool] = None,
     ) -> None:
         exact_reciprocal_eig_inversion(
-            circ, qpe_register, ancilla_qubit, A=A, t0=t0, C=C
+            circ,
+            qpe_register,
+            ancilla_qubit,
+            A=A,
+            t0=t0,
+            C=C,
+            has_negative_eigenvalues=has_negative_eigenvalues,
         )
