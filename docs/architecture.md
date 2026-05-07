@@ -179,13 +179,22 @@ artifact and is consumed by the same backend that produced it.
 |---|---|---|
 | `QiskitBackend` | `BackendV2` / `IBMBackend` / `AerSimulator` (uses `SamplerV2`) | [backends/qiskit_backend.py](../src/qlsas/backends/qiskit_backend.py) |
 | `QuantinuumBackend` | `QuantinuumBackendConfig` (Guppy/Selene + qnexus paths) | [backends/quantinuum_backend.py](../src/qlsas/backends/quantinuum_backend.py) |
+| `CudaqBackend` | NVIDIA CUDA-Q targets — `nvidia` / `nvidia-fp64` / `nvidia-mgpu` / `nvidia-mqpu` / `qpp-cpu`. Translates Qiskit → CUDA-Q kernel via `from_qiskit_circuit` (with QASM 2 fallback) at the seam. | [backends/cudaq_backend.py](../src/qlsas/backends/cudaq_backend.py) |
 
 `adapt(backend, ibm_options=None)` ([backends/dispatch.py](../src/qlsas/backends/dispatch.py))
 returns the right adapter for a raw backend object and is idempotent on
 already-wrapped `Backend` instances. The Qrisp-shaped `run(qc, shots,
 token)` convenience means a future Qrisp algorithm-layer migration can
 expose any qlsas backend as a `VirtualBackend` via a one-line wrapper —
-no protocol change required at migration time.
+no protocol change required at migration time.  The wrapper is provided
+as `qlsas.backends.as_qrisp_backend(backend)`:
+
+```python
+from qrisp.interface import VirtualBackend
+from qlsas.backends import CudaqBackend, as_qrisp_backend
+
+vbackend = VirtualBackend(as_qrisp_backend(CudaqBackend("nvidia-fp64")))
+```
 
 `Transpiler` and `Executer` are now thin facades that dispatch into
 `adapt(backend).compile()` / `.run_compiled()`. They are kept for
@@ -486,6 +495,63 @@ constructs a `QuantumLinearSolver(...)` with `backend=QuantinuumBackendConfig(..
 calls `executer.run(circuit, backend, shots, register_infos=..., measurement_plan=...)` directly | No change required for back-compat, but new code should call `adapter.run_compiled(artifact, shots)` instead and let `Backend.compile` produce the artifact.
 checks `isinstance(backend, QuantinuumBackendConfig)` to branch behaviour | Replace with a capability check on the adapter (`adapt(backend).supports_multi_circuit` / `.name` / future capability flags).
 adds a new execution target (CUDA-Q, custom simulator, future hardware) | Subclass `Backend` and register in `adapt()`. See "Adding a new execution backend" above.
+
+## What changed in PR B (CUDA-Q backend)
+
+PR B is the first concrete realisation of the "Adding a new execution
+backend" extension point introduced by the Backend protocol refactor.
+Algorithm code (HHL, eigenvalue oracles, state prep) is unchanged.
+
+### New public APIs
+
+| API | Purpose |
+|---|---|
+| `qlsas.backends.cudaq_backend.CudaqBackend` | GPU-accelerated execution via NVIDIA CUDA-Q. Targets: `nvidia` / `nvidia-fp64` / `nvidia-mgpu` / `nvidia-mqpu` / `qpp-cpu`. |
+| `qlsas.backends.as_qrisp_backend(backend)` | Wraps any `Backend` for use with Qrisp's `VirtualBackend` (one-liner; the protocol shape was designed for this). |
+| ``cudaq`` pytest marker | Tests that require `cuda-quantum` importable; they skip cleanly elsewhere. |
+| `pip install qlsas[cudaq]` | Optional dependency extra. CUDA-Q is officially Linux-only; macOS/Windows installs will skip the cudaq tests. |
+
+### Translation seam
+
+Algorithms keep building Qiskit `QuantumCircuit`s.  At
+`CudaqBackend.compile`:
+
+1. `transpile(qc, basis_gates=[...])` decomposes high-level gates into a
+   CUDA-Q-ingestible basis.
+2. `qc.decompose(reps=4)` flattens `HamiltonianGate`, `StatePreparation`,
+   and any remaining controlled boxes that QASM 2 cannot represent.
+3. `cudaq.from_qiskit_circuit` (preferred) or a QASM 2 round-trip
+   produces the CUDA-Q kernel.
+
+This decomposition step inflates gate counts versus Aer's native
+`HamiltonianGate` execution.  That is the documented cost of crossing
+the boundary; the Qrisp algorithm-layer migration is the long-term path
+to native-CUDA-Q kernels (Qrisp generates them directly), so we
+deliberately do **not** maintain a parallel `@cudaq.kernel` HHL
+implementation in this repo.
+
+### Bitstring endianness — the regression net
+
+CUDA-Q's `SampleResult` joins per-register measurements in the order
+classical registers were declared in the kernel; Qiskit's `join_data`
+convention places `cregs[0]` at the **rightmost (LSB)** of the joined
+bitstring (verified empirically — see [docs/architecture.md
+Conventions](#conventions) and the `register_names` docstrings).
+`CudaqBackend._counts_from_sample_result` reverses each CUDA-Q
+bitstring to match the Qiskit convention.
+
+`tests/test_cudaq_backend.py::TestBellParity::test_bell_state_byte_exact`
+runs an Aer / `qpp-cpu` parity check on the Bell state and is the
+**regression net for endianness**.  If a future CUDA-Q upgrade flips
+the byte order, that test fails loudly and the fix is to flip the
+`CudaqBackend.REVERSE_BITSTRINGS` class flag.
+
+### Process-global `set_target` lock
+
+`cudaq.set_target` mutates process-global state, so two `CudaqBackend`
+instances with different targets in the same process would race.
+`CudaqBackend.run_compiled` serialises `set_target` + `sample` under a
+module-level `threading.Lock`.
 
 ## What's not addressed by these refactors
 
