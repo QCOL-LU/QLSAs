@@ -6,7 +6,7 @@ import pytest
 from qiskit_aer import AerSimulator
 
 from qlsas.state_prep import StatePrep, DefaultStatePrep
-from qlsas.algorithms.hhl import HHL, ClassicalEigOracle, QuantumEigOracle, UnaryEigOracle
+from qlsas.algorithms.hhl import HHL, MCRYEigOracle, ExactReciprocalEigOracle, UCRYEigOracle
 
 
 def pytest_addoption(parser):
@@ -160,19 +160,19 @@ def b_8():
 
 @pytest.fixture(scope="session")
 def hhl_classical():
-    return HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle())
+    return HHL(num_qpe_qubits=4, eig_oracle=MCRYEigOracle())
 
 
 @pytest.fixture(scope="session")
 def hhl_quantum():
-    return HHL(num_qpe_qubits=4, eig_oracle=QuantumEigOracle())
+    return HHL(num_qpe_qubits=4, eig_oracle=ExactReciprocalEigOracle())
 
 
 @pytest.fixture(scope="session")
 def hhl_unary():
-    return HHL(num_qpe_qubits=4, eig_oracle=UnaryEigOracle())
+    return HHL(num_qpe_qubits=4, eig_oracle=UCRYEigOracle())
 
 
 @pytest.fixture(scope="session")
 def hhl_3qpe():
-    return HHL(num_qpe_qubits=3, eig_oracle=ClassicalEigOracle())
+    return HHL(num_qpe_qubits=3, eig_oracle=MCRYEigOracle())

@@ -7,7 +7,7 @@ import pytest
 from qlsas.refiner import Refiner
 from qlsas.solver import QuantumLinearSolver
 from qlsas.state_prep import StatePrep, DefaultStatePrep
-from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.algorithms.hhl import HHL, MCRYEigOracle
 from qlsas.readout import MeasureXReadout
 
 
@@ -20,7 +20,7 @@ def _normalized(v):
 
 
 def _make_solver(aer_backend, shots=2048):
-    hhl = HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle())
+    hhl = HHL(num_qpe_qubits=4, eig_oracle=MCRYEigOracle())
     return QuantumLinearSolver(
         qlsa=hhl,
         readout=MeasureXReadout(),

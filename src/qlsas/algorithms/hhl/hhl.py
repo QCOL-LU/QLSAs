@@ -10,7 +10,7 @@ from qiskit.synthesis.qft import synth_qft_full
 
 from qlsas.algorithms.base import QLSA
 from qlsas.readout.base import QLSACircuit, SuccessCriterion
-from qlsas.algorithms.hhl.eig_oracles import EigOracle, ClassicalEigOracle
+from qlsas.algorithms.hhl.eig_oracles import EigOracle, UCRYEigOracle
 from qlsas.algorithms.hhl.hhl_helpers import dynamic_t0, C_factor
 
 
@@ -28,16 +28,20 @@ class HHL(QLSA):
         Number of qubits for the phase-estimation register.
     eig_oracle : EigOracle, optional
         Eigenvalue inversion strategy.  Defaults to
-        :class:`~qlsas.algorithms.hhl.eig_oracles.ClassicalEigOracle`.
+        :class:`~qlsas.algorithms.hhl.eig_oracles.UCRYEigOracle` — Möttönen
+        uniformly-controlled RY tree, ``O(2**m)`` depth, and the cleanest
+        out-of-range / boundary-state behaviour of the three oracles.  See
+        ``docs/eigenvalue_inversion.md`` for the full comparison.
 
     Examples
     --------
     ::
 
-        from qlsas.algorithms.hhl import HHL, ClassicalEigOracle, UnaryEigOracle
+        from qlsas.algorithms.hhl import HHL, MCRYEigOracle, ExactReciprocalEigOracle
 
-        hhl = HHL(num_qpe_qubits=4)                          # default oracle
-        hhl = HHL(num_qpe_qubits=4, eig_oracle=UnaryEigOracle())  # UCRy oracle
+        hhl = HHL(num_qpe_qubits=4)                                       # default: UCRYEigOracle
+        hhl = HHL(num_qpe_qubits=4, eig_oracle=MCRYEigOracle())            # opt-in
+        hhl = HHL(num_qpe_qubits=4, eig_oracle=ExactReciprocalEigOracle()) # opt-in
     """
 
     def __init__(
@@ -50,9 +54,9 @@ class HHL(QLSA):
         if eig_oracle is not None and not isinstance(eig_oracle, EigOracle):
             raise TypeError(
                 f"eig_oracle must be an EigOracle instance, got {type(eig_oracle).__name__!r}. "
-                "Use ClassicalEigOracle(), QuantumEigOracle(), or UnaryEigOracle()."
+                "Use MCRYEigOracle(), UCRYEigOracle(), or ExactReciprocalEigOracle()."
             )
-        self.eig_oracle: EigOracle = eig_oracle or ClassicalEigOracle()
+        self.eig_oracle: EigOracle = eig_oracle or UCRYEigOracle()
 
     # ------------------------------------------------------------------
     # Public API

@@ -15,7 +15,7 @@ import numpy as np
 import numpy.linalg as LA
 import pytest
 
-from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.algorithms.hhl import HHL, MCRYEigOracle
 from qlsas.state_prep import StatePrep, DefaultStatePrep
 from qlsas.readout import MeasureXReadout
 from qlsas.quantinuum_config import QuantinuumBackendConfig
@@ -36,7 +36,7 @@ def _run_hhl_aer(
 ) -> tuple[np.ndarray, float, float]:
     """Run HHL on Qiskit Aer (reference path) and return (solution, success_rate, residual)."""
     sp = DefaultStatePrep()
-    hhl = HHL(num_qpe_qubits=num_qpe_qubits, eig_oracle=ClassicalEigOracle())
+    hhl = HHL(num_qpe_qubits=num_qpe_qubits, eig_oracle=MCRYEigOracle())
     qlsa_circuit = hhl.build_circuit(A, b, sp)
     readout = MeasureXReadout()
     circuit = readout.apply(qlsa_circuit)
@@ -66,7 +66,7 @@ def _run_hhl_selene(
 ) -> tuple[np.ndarray, float, float]:
     """Build, transpile, execute on Selene, and return (solution, success_rate, residual)."""
     sp = DefaultStatePrep()
-    hhl = HHL(num_qpe_qubits=num_qpe_qubits, eig_oracle=ClassicalEigOracle())
+    hhl = HHL(num_qpe_qubits=num_qpe_qubits, eig_oracle=MCRYEigOracle())
     qlsa_circuit = hhl.build_circuit(A, b, sp)
     readout = MeasureXReadout()
     circuit = readout.apply(qlsa_circuit)
@@ -204,7 +204,7 @@ class TestSelene4x4Problem:
     @pytest.mark.slow
     def test_4x4_opt0_residual_below_threshold(self, hhl_4x4_problem):
         A, b = hhl_4x4_problem
-        _, _, residual = _run_hhl_selene(A, b, num_qpe_qubits=2, optimization_level=0, shots=3000)
+        _, _, residual = _run_hhl_selene(A, b, num_qpe_qubits=4, optimization_level=0, shots=3000)
         assert residual < 0.5, (
             f"4x4 Selene opt_level=0 residual {residual:.4f} --- baseline circuit is wrong."
         )
@@ -213,8 +213,8 @@ class TestSelene4x4Problem:
     def test_4x4_opt2_residual_consistent_with_opt0(self, hhl_4x4_problem):
         """Optimisation must not degrade a noiseless 4x4 simulation."""
         A, b = hhl_4x4_problem
-        _, _, residual_0 = _run_hhl_selene(A, b, num_qpe_qubits=2, optimization_level=0, shots=3000, seed=7)
-        _, _, residual_2 = _run_hhl_selene(A, b, num_qpe_qubits=2, optimization_level=2, shots=3000, seed=7)
+        _, _, residual_0 = _run_hhl_selene(A, b, num_qpe_qubits=4, optimization_level=0, shots=3000, seed=7)
+        _, _, residual_2 = _run_hhl_selene(A, b, num_qpe_qubits=4, optimization_level=2, shots=3000, seed=7)
         assert residual_2 < 0.5, (
             f"opt_level=2 residual {residual_2:.4f} vs opt_level=0 residual {residual_0:.4f}."
         )

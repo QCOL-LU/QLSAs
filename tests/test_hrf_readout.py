@@ -27,7 +27,7 @@ from qlsas.readout.hrf_readout import HRFReadout
 from qlsas.measurement_result import MeasurementResult
 from qlsas.solver import QuantumLinearSolver, SolveResult
 from qlsas.state_prep import DefaultStatePrep
-from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.algorithms.hhl import HHL, MCRYEigOracle
 
 
 # ---------------------------------------------------------------------------
@@ -72,7 +72,7 @@ def _make_qlsa_circuit(n: int = 2) -> tuple[QLSACircuit, QuantumCircuit]:
 
 
 def _make_solver(backend, num_trees=5, num_qpe=4, shots=2048):
-    hhl = HHL(num_qpe_qubits=num_qpe, eig_oracle=ClassicalEigOracle())
+    hhl = HHL(num_qpe_qubits=num_qpe, eig_oracle=MCRYEigOracle())
     readout = HRFReadout(num_trees=num_trees)
     return QuantumLinearSolver(
         qlsa=hhl,
@@ -406,7 +406,7 @@ class TestHRFSolverContracts:
     def test_existing_measure_x_unaffected(self, aer_backend, pd_2x2, b_2):
         """Adding HRFReadout must not change behaviour of the MeasureXReadout path."""
         solver = QuantumLinearSolver(
-            qlsa=HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle()),
+            qlsa=HHL(num_qpe_qubits=4, eig_oracle=MCRYEigOracle()),
             readout=MeasureXReadout(),
             backend=aer_backend,
             state_prep=DefaultStatePrep(),
@@ -435,7 +435,7 @@ class TestHRFSolverContracts:
         relies on.
         """
         mx_solver = QuantumLinearSolver(
-            qlsa=HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle()),
+            qlsa=HHL(num_qpe_qubits=4, eig_oracle=MCRYEigOracle()),
             readout=MeasureXReadout(),
             backend=aer_backend,
             state_prep=DefaultStatePrep(),

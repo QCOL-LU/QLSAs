@@ -97,7 +97,7 @@ class QuantumLinearSolver:
 
         solver = QuantumLinearSolver(
             state_prep=DefaultStatePrep(),
-            qlsa=HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle()),
+            qlsa=HHL(num_qpe_qubits=4, eig_oracle=MCRYEigOracle()),
             readout=MeasureXReadout(),
             backend=aer_backend,
         )

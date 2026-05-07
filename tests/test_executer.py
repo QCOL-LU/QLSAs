@@ -12,7 +12,7 @@ from qlsas.ibm_options import (
     apply_ibm_error_mitigation_options,
 )
 from qlsas.state_prep import StatePrep, DefaultStatePrep
-from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.algorithms.hhl import HHL, MCRYEigOracle
 from qlsas.readout import MeasureXReadout
 
 
@@ -23,7 +23,7 @@ from qlsas.readout import MeasureXReadout
 def _transpiled_2x2_circuit(aer_backend):
     """Build and transpile a 2x2 HHL circuit for the AerSimulator."""
     sp = DefaultStatePrep()
-    hhl = HHL(num_qpe_qubits=3, eig_oracle=ClassicalEigOracle())
+    hhl = HHL(num_qpe_qubits=3, eig_oracle=MCRYEigOracle())
     A = np.array([[2.0, 1.0], [1.0, 3.0]])
     b = np.array([1.0, 0.0])
     qlsa_circuit = hhl.build_circuit(A, b, sp)

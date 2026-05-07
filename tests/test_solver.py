@@ -6,7 +6,7 @@ import pytest
 
 from qlsas.solver import QuantumLinearSolver, SolveResult
 from qlsas.state_prep import StatePrep, DefaultStatePrep
-from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.algorithms.hhl import HHL, MCRYEigOracle
 from qlsas.executer import Executer
 from qlsas.ibm_options import IBMExecutionOptions
 from qlsas.readout import MeasureXReadout, SwapTestReadout
@@ -21,7 +21,7 @@ def _normalized(v):
 
 
 def _make_solver(backend, readout=None, num_qpe=4, oracle=None, shots=1024, **kwargs):
-    hhl = HHL(num_qpe_qubits=num_qpe, eig_oracle=oracle or ClassicalEigOracle())
+    hhl = HHL(num_qpe_qubits=num_qpe, eig_oracle=oracle or MCRYEigOracle())
     rd = readout or MeasureXReadout()
     return QuantumLinearSolver(
         qlsa=hhl,

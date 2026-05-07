@@ -10,7 +10,7 @@ from qlsas.post_processor import (
     _finish_tomography,
 )
 from qlsas.state_prep import StatePrep, DefaultStatePrep
-from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.algorithms.hhl import HHL, MCRYEigOracle
 from qlsas.readout import MeasureXReadout, SwapTestReadout
 from qlsas.transpiler import Transpiler
 from qlsas.executer import Executer
@@ -27,7 +27,7 @@ def _normalized(v):
 def _run_hhl_2x2_measure_x(aer_backend, A, b, shots=4096):
     """Build, transpile, and execute a 2x2 measure_x HHL circuit; return the raw result."""
     sp = DefaultStatePrep()
-    hhl = HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle())
+    hhl = HHL(num_qpe_qubits=4, eig_oracle=MCRYEigOracle())
     qlsa_circuit = hhl.build_circuit(A, b, sp)
     readout = MeasureXReadout()
     circ = readout.apply(qlsa_circuit)
@@ -40,7 +40,7 @@ def _run_hhl_2x2_measure_x(aer_backend, A, b, shots=4096):
 def _run_hhl_2x2_swap_test(aer_backend, A, b, swap_vec, shots=4096):
     """Build, transpile, and execute a 2x2 swap_test HHL circuit; return the raw result."""
     sp = DefaultStatePrep()
-    hhl = HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle())
+    hhl = HHL(num_qpe_qubits=4, eig_oracle=MCRYEigOracle())
     qlsa_circuit = hhl.build_circuit(A, b, sp)
     readout = SwapTestReadout(swap_test_vector=swap_vec, state_prep=sp)
     circ = readout.apply(qlsa_circuit)

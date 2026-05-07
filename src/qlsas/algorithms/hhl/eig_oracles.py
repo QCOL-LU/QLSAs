@@ -4,17 +4,22 @@ Each oracle is a lightweight strategy object that appends the appropriate
 rotation circuit to a partially-built HHL circuit.  Pass one to
 :class:`~qlsas.algorithms.hhl.hhl.HHL` at construction time::
 
-    from qlsas.algorithms.hhl.eig_oracles import ClassicalEigOracle
-    hhl = HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle())
+    from qlsas.algorithms.hhl.eig_oracles import UCRYEigOracle
+    hhl = HHL(num_qpe_qubits=4, eig_oracle=UCRYEigOracle())
 
 Available oracles
 -----------------
-:class:`ClassicalEigOracle`
-    Classically-computed, multi-controlled RY gates.  Accurate but deep.
-:class:`QuantumEigOracle`
-    Qiskit's ``ExactReciprocalGate``; compact for positive-definite matrices.
-:class:`UnaryEigOracle`
-    Uniformly-controlled RY (UCRy) decomposition.  O(2^m) depth, no ancilla.
+:class:`MCRYEigOracle`
+    One ``m``-controlled RY per QPE basis state.  Brute-force lookup; depth
+    ``O(m * 2^m)``.
+:class:`UCRYEigOracle`
+    Möttönen uniformly-controlled RY decomposition.  Depth ``O(2^m)``,
+    same unitary as :class:`MCRYEigOracle`.  Default oracle on :class:`HHL`.
+:class:`ExactReciprocalEigOracle`
+    Wraps Qiskit's :class:`ExactReciprocalGate` (which itself decomposes to
+    a UCRY tree).  Same asymptotic depth as :class:`UCRYEigOracle` with a
+    smaller constant factor, at the cost of saturation and boundary-state
+    quirks — see ``docs/eigenvalue_inversion.md`` for the trade-offs.
 """
 
 from __future__ import annotations
@@ -25,9 +30,9 @@ import numpy as np
 from qiskit import QuantumCircuit, QuantumRegister
 
 from qlsas.algorithms.hhl.hhl_helpers import (
-    classical_eig_inversion_oracle,
-    quantum_eig_inversion_oracle,
-    unary_iteration_eig_inversion_oracle,
+    mcry_eig_inversion,
+    ucry_eig_inversion,
+    exact_reciprocal_eig_inversion,
 )
 
 
@@ -69,13 +74,19 @@ class EigOracle(ABC):
         ...
 
 
-class ClassicalEigOracle(EigOracle):
-    """Classical eigenvalue inversion via multi-controlled RY gates.
+class MCRYEigOracle(EigOracle):
+    """Eigenvalue inversion via one ``m``-controlled RY per QPE basis state.
 
-    Computes exact eigenvalues with ``numpy`` and generates one
-    multi-controlled rotation per QPE basis state.  Faithful for any
-    Hermitian matrix (positive-definite, indefinite, or negative-definite)
-    because it handles two's-complement phase unwrapping automatically.
+    For every integer ``k`` in ``[1, 2^m)`` the oracle appends a single
+    multi-controlled RY gate whose control state is ``|k⟩`` and whose
+    rotation angle is ``2·arcsin(C / λ_k)``, where ``λ_k`` is the eigenvalue
+    implied by the QPE phase ``k / 2^m``.  Decomposed depth scales as
+    ``O(m · 2^m)`` because each MCRY decomposes to roughly ``m`` Toffoli /
+    CNOT gates.
+
+    Same rotation table (and therefore the same unitary on populated states)
+    as :class:`UCRYEigOracle`; choose this oracle only if you need the
+    explicit per-basis-state structure for debugging or transpilation.
     """
 
     def apply(
@@ -87,17 +98,20 @@ class ClassicalEigOracle(EigOracle):
         t0: float,
         C: float,
     ) -> None:
-        classical_eig_inversion_oracle(
-            circ, qpe_register, ancilla_qubit, A=A, t0=t0, C=C
-        )
+        mcry_eig_inversion(circ, qpe_register, ancilla_qubit, A=A, t0=t0, C=C)
 
 
-class QuantumEigOracle(EigOracle):
-    """Quantum eigenvalue inversion via Qiskit's ``ExactReciprocalGate``.
+class UCRYEigOracle(EigOracle):
+    """Eigenvalue inversion via a Möttönen uniformly-controlled RY tree.
 
-    Uses Qiskit's built-in reciprocal gate, which is compact and efficient
-    for positive-definite matrices but requires the ``neg_vals`` flag for
-    indefinite systems.
+    Computes the same rotation-angle table as :class:`MCRYEigOracle` but
+    realises it as a recursive ``CNOT + RY`` tree (Möttönen et al., 2004).
+    Decomposed depth ``O(2^m)``, gate count ``2^m`` RY + ``2^(m+1) − 2``
+    CX, no ancillas.  Identical unitary to :class:`MCRYEigOracle` on every
+    QPE basis state.
+
+    Recommended default — same correctness as :class:`MCRYEigOracle` with
+    an asymptotic factor-``m`` depth saving and no edge-case footguns.
     """
 
     def apply(
@@ -109,17 +123,26 @@ class QuantumEigOracle(EigOracle):
         t0: float,
         C: float,
     ) -> None:
-        quantum_eig_inversion_oracle(
-            circ, qpe_register, ancilla_qubit, A=A, t0=t0, C=C
-        )
+        ucry_eig_inversion(circ, qpe_register, ancilla_qubit, A=A, t0=t0, C=C)
 
 
-class UnaryEigOracle(EigOracle):
-    """Uniformly-controlled RY (UCRy) eigenvalue inversion oracle.
+class ExactReciprocalEigOracle(EigOracle):
+    """Eigenvalue inversion via Qiskit's :class:`ExactReciprocalGate`.
 
-    Achieves the same rotation angles as :class:`ClassicalEigOracle` but
-    uses a recursive CNOT + RY tree (Möttönen et al., 2004) that gives
-    O(2^m) depth without additional ancilla qubits.
+    Same asymptotic depth as :class:`UCRYEigOracle` (the gate decomposes
+    to a UCRY internally) and ~10–20 % smaller constant factor.  Two
+    structural caveats:
+
+    * **Saturation drop.** When ``|S · nl / i| > 1`` the gate emits a
+      zero rotation instead of clamping to ``π`` — leakage amplitude on
+      saturating QPE states is lost.
+    * **Boundary-state hole.** When ``neg_vals=True`` the gate hard-codes
+      the rotation on QPE state ``|2^(m-1)⟩`` (the most-negative phase
+      in two's complement) to zero, regardless of the spectrum.
+
+    Prefer :class:`UCRYEigOracle` unless you specifically want the
+    Qiskit-supplied decomposition; see ``docs/eigenvalue_inversion.md`` for
+    when the saturation and boundary issues matter in practice.
     """
 
     def apply(
@@ -131,6 +154,6 @@ class UnaryEigOracle(EigOracle):
         t0: float,
         C: float,
     ) -> None:
-        unary_iteration_eig_inversion_oracle(
+        exact_reciprocal_eig_inversion(
             circ, qpe_register, ancilla_qubit, A=A, t0=t0, C=C
         )

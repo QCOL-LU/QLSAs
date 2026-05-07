@@ -134,7 +134,7 @@ pip install treelib mthree
 
 ```python
 from qlsas.solver import QuantumLinearSolver
-from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.algorithms.hhl import HHL, MCRYEigOracle
 from qlsas.readout import HRFReadout          # ← the only change
 from qlsas.state_prep import DefaultStatePrep
 from qiskit_aer import AerSimulator
@@ -144,7 +144,7 @@ A = np.array([[2.0, 1.0], [1.0, 3.0]])
 b = np.array([1.0, 0.0])  # will be auto-normalised inside HHL
 
 solver = QuantumLinearSolver(
-    qlsa=HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle()),
+    qlsa=HHL(num_qpe_qubits=4, eig_oracle=MCRYEigOracle()),
     readout=HRFReadout(num_trees=20),   # ← HRF instead of MeasureXReadout()
     backend=AerSimulator(),
     state_prep=DefaultStatePrep(),

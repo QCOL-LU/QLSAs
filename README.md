@@ -162,7 +162,7 @@ components. Typical IBM backend setup:
 ```python
 from qiskit_ibm_runtime import QiskitRuntimeService
 
-from qlsas.algorithms.hhl import HHL, ClassicalEigOracle
+from qlsas.algorithms.hhl import HHL
 from qlsas.readout import MeasureXReadout
 from qlsas.solver import QuantumLinearSolver
 from qlsas.state_prep import DefaultStatePrep
@@ -171,7 +171,7 @@ service = QiskitRuntimeService(name="QLSAs")
 backend = service.backend("ibm_brisbane")
 
 solver = QuantumLinearSolver(
-    qlsa=HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle()),
+    qlsa=HHL(num_qpe_qubits=4),  # default eig_oracle=UCRYEigOracle()
     readout=MeasureXReadout(),
     backend=backend,
     state_prep=DefaultStatePrep(),
@@ -194,7 +194,7 @@ Forest tomography (see [docs/hrf_readout.md](docs/hrf_readout.md)):
 from qlsas.readout import HRFReadout
 
 solver = QuantumLinearSolver(
-    qlsa=HHL(num_qpe_qubits=4, eig_oracle=ClassicalEigOracle()),
+    qlsa=HHL(num_qpe_qubits=4),
     readout=HRFReadout(num_trees=20),
     backend=backend,
     shots=4096,
@@ -202,6 +202,11 @@ solver = QuantumLinearSolver(
 ```
 
 The solver dispatches single- vs multi-circuit readouts automatically.
+
+Inversion oracles other than the `UCRYEigOracle` default (`MCRYEigOracle`,
+`ExactReciprocalEigOracle`) are available — see
+[docs/eigenvalue_inversion.md](docs/eigenvalue_inversion.md) for the full
+trade-off analysis and decision guide.
 
 ### IBM Error Mitigation
 

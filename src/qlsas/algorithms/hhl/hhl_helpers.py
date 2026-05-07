@@ -7,51 +7,33 @@ from qiskit import QuantumCircuit, QuantumRegister
 # Eigenvalue inversion oracles
 # ==============================================================================
 
-def classical_eig_inversion_oracle(
+def mcry_eig_inversion(
     circ: QuantumCircuit,
     qpe_register: QuantumRegister,
     ancilla_qubit: QuantumRegister,
     A: np.ndarray,
     t0: float,
     C: float,
-    lam_floor: float = 1e-12,
 ):
     """
-    Classical eigenvalue inversion oracle for the HHL algorithm.
-    This oracle is used to invert the eigenvalues of the matrix A using 
-    classically calculated eigenvalues. Automatically detects if A is 
-    indefinite to apply two's complement phase unwrapping.
+    Multi-controlled RY (MCRY) eigenvalue-inversion routine.  Appends one
+    ``m``-controlled RY per QPE basis state ``k ∈ [1, 2^m)``, with the
+    angle derived directly from the phase implied by ``k`` (no snapping to
+    true eigenvalues).  Two's-complement phase unwrapping is applied only
+    when ``A`` has negative eigenvalues; for SPD matrices unwrap would
+    misinterpret QPE leakage on ``k >= 2**(m-1)`` as spurious negative
+    eigenvalues and flip the sign of the rotation.
     """
     m = len(qpe_register)
-    
-    eigs = np.linalg.eigvalsh(A)
-    eigs = np.real_if_close(eigs)
-    eigs = np.real(eigs)
-    
-    # 1. Automatically detect if phase unwrapping is needed
-    has_negative_eigs = bool(np.any(eigs < -1e-12))
+    has_negative_eigs = bool(np.any(np.linalg.eigvalsh(A) < -1e-12))
 
-    for k in range(2**m):
+    for k in range(1, 2**m):  # k=0 corresponds to phase=0; no inversion
         phi = k / (2**m)
-        
-        # 2. Apply two's complement if matrix is indefinite
         if has_negative_eigs and phi >= 0.5:
             phi -= 1.0
-            
-        # 3. Calculate signed eigenvalue estimate from phase
-        lam_est = (2 * np.pi * phi) / t0
-        
-        # Apply the floor while preserving the sign
-        if abs(lam_est) < lam_floor:
-            lam_est = lam_floor if lam_est >= 0 else -lam_floor
 
-        # Find the nearest true eigenvalue (signed distance)
-        lam = eigs[np.argmin(np.abs(eigs - lam_est))]
-        #lam = lam_est
-
-        ratio = C / lam
-        # Clamp between -1.0 and 1.0 to ensure arcsin is valid
-        ratio = max(min(ratio, 1.0), -1.0) 
+        lam = (2 * np.pi * phi) / t0
+        ratio = max(min(C / lam, 1.0), -1.0)
         theta = 2 * np.arcsin(ratio)
 
         ctrl_state = format(k, f"0{m}b")
@@ -59,83 +41,69 @@ def classical_eig_inversion_oracle(
         circ.append(mc_ry, list(qpe_register) + [ancilla_qubit])
 
 
-def quantum_eig_inversion_oracle(
+def exact_reciprocal_eig_inversion(
     circ: QuantumCircuit,
     qpe_register: QuantumRegister,
-    ancilla_qubit: QuantumRegister, 
+    ancilla_qubit: QuantumRegister,
     A: np.ndarray,
     t0: float,
     C: float,
 ):
     """
-    Quantum eigenvalue inversion oracle for the HHL algorithm.
-    This oracle is used to invert the eigenvalues of the matrix A using 
-    the qiskit ExactReciprocalGate method.
+    Eigenvalue inversion via Qiskit's :class:`ExactReciprocalGate`.
+
+    Sets ``neg_vals`` based on whether A has any negative eigenvalues,
+    because under ``neg_vals=True`` Qiskit treats ``k >= 2**(n-1)`` as
+    negative phases — which would corrupt SPD problems where QPE leakage
+    leaves amplitude in that range.  The gate uses
+    ``nl = 2**n`` when ``neg_vals=False`` and ``nl = 2**(n-1)`` when
+    ``neg_vals=True``, so the physical-to-gate scaling depends on the
+    flag: ``S = C*t0/(2*pi)`` for the former, ``S = C*t0/pi`` for the
+    latter.
     """
     num_qpe_qubits = len(qpe_register)
+    has_negative_eigs = bool(np.any(np.linalg.eigvalsh(A) < -1e-12))
 
-    # Check if A is indefinite/negative definite (has negative eigenvalues)
-    eigs = np.linalg.eigvalsh(A)
-    # Use a small tolerance to prevent floating-point noise from triggering True
-    has_negative_eigs = bool(np.any(eigs < -1e-12))
-    
-    # Translate physical C into Qiskit's integer-based scaling factor S
-    S = (C * t0) / (2 * np.pi)
-    
+    if has_negative_eigs:
+        S = (C * t0) / np.pi
+    else:
+        S = (C * t0) / (2 * np.pi)
+
     recip_gate = ExactReciprocalGate(
         num_state_qubits=num_qpe_qubits,
         scaling=S,
-        neg_vals=has_negative_eigs
+        neg_vals=has_negative_eigs,
     )
-    
-    # Append the gate. ExactReciprocalGate expects the state qubits first, 
-    # followed by the target ancilla qubit.
+
     circ.append(recip_gate, list(qpe_register) + [ancilla_qubit])
 
-def unary_iteration_eig_inversion_oracle(
+def ucry_eig_inversion(
     circ: QuantumCircuit,
     qpe_register: QuantumRegister,
     ancilla_qubit,
     A: np.ndarray,
     t0: float,
     C: float,
-    lam_floor: float = 1e-12,
 ):
     """
-    Eigenvalue inversion oracle using a uniformly controlled RY (UCRy)
-    decomposition.  Functionally equivalent to classical_eig_inversion_oracle
-    but replaces the 2^m  m-controlled RY gates with a recursive CNOT + RY
-    tree, achieving O(2^m) circuit depth instead of O(m · 2^m).
-
-    Based on Möttönen et al., "Quantum Circuits for General Multiqubit
-    Gates" (2004).  The technique is closely related to the unary-iteration
-    scheme of Babbush et al. (arXiv:1805.03662) but requires no ancilla
-    qubits.
+    Uniformly-controlled RY (UCRY) eigenvalue-inversion routine.
+    Functionally equivalent to :func:`mcry_eig_inversion` (same rotation
+    angle table, same unitary on every QPE basis state) but realises it
+    as a recursive CNOT + RY tree (Möttönen et al., 2004), achieving
+    ``O(2^m)`` circuit depth instead of ``O(m · 2^m)`` and using no
+    ancilla qubits.
     """
     m = len(qpe_register)
+    has_negative_eigs = bool(np.any(np.linalg.eigvalsh(A) < -1e-12))
 
-    eigs = np.linalg.eigvalsh(A)
-    eigs = np.real_if_close(eigs)
-    eigs = np.real(eigs)
-
-    has_negative_eigs = bool(np.any(eigs < -1e-12))
-
-    thetas = np.empty(2**m)
-    for k in range(2**m):
+    thetas = np.zeros(2**m)  # thetas[0] = 0: phase=0 ⇒ no inversion
+    for k in range(1, 2**m):
         phi = k / (2**m)
-
         if has_negative_eigs and phi >= 0.5:
             phi -= 1.0
 
-        lam_est = (2 * np.pi * phi) / t0
-
-        if abs(lam_est) < lam_floor:
-            lam_est = lam_floor if lam_est >= 0 else -lam_floor
-
-        lam = eigs[np.argmin(np.abs(eigs - lam_est))]
-
-        ratio = C / lam
-        ratio = max(min(ratio, 1.0), -1.0)
+        lam = (2 * np.pi * phi) / t0
+        ratio = max(min(C / lam, 1.0), -1.0)
         thetas[k] = 2 * np.arcsin(ratio)
 
     _apply_ucry(circ, list(qpe_register), ancilla_qubit, thetas)
