@@ -70,6 +70,9 @@ class HHL(QLSA):
         *,
         t0: Optional[float] = None,
         C: Optional[float] = None,
+        has_negative_eigenvalues: Optional[bool] = None,
+        lambda_max_bound: Optional[float] = None,
+        lambda_min_bound: Optional[float] = None,
     ) -> QLSACircuit:
         """Build the core HHL circuit (no readout measurements).
 
@@ -82,9 +85,26 @@ class HHL(QLSA):
         state_prep : StatePrep
             Strategy for loading |b⟩ into the circuit.
         t0 : float, optional
-            Time parameter for the controlled Hamiltonian.  Auto-computed if *None*.
+            Time parameter for the controlled Hamiltonian.  Resolution order:
+            explicit ``t0`` → ``(π/lambda_max_bound)·(1−0.05)`` →
+            :func:`dynamic_t0` (which calls ``np.linalg.eigvalsh``).
         C : float, optional
-            Scaling factor for eigenvalue inversion.  Auto-computed if *None*.
+            Scaling factor for eigenvalue inversion.  Resolution order:
+            explicit ``C`` → ``0.9 · lambda_min_bound`` → :func:`C_factor`
+            (which calls ``np.linalg.eigvalsh``).
+        has_negative_eigenvalues : bool, optional
+            Declares whether ``A`` has any (strictly) negative eigenvalues.
+            When supplied, the eigenvalue-inversion oracle skips its
+            internal ``np.linalg.eigvalsh(A)`` call.  ``None`` (default)
+            triggers the eigvalsh fallback inside the oracle.
+        lambda_max_bound : float, optional
+            Upper bound on ``max |λ(A)|`` (e.g. a Gershgorin or operator-
+            norm bound).  Used to derive ``t0`` only when ``t0`` is not
+            given explicitly.  Lets callers avoid the ``eigvalsh`` path.
+        lambda_min_bound : float, optional
+            Lower bound on ``min |λ(A)|`` over the non-null spectrum
+            (i.e. ``1/κ`` or a known approximation).  Used to derive ``C``
+            only when ``C`` is not given explicitly.
 
         Returns
         -------
@@ -92,13 +112,38 @@ class HHL(QLSA):
             The core circuit plus register metadata.  The ``params`` field
             contains ``{"t0": t0, "C": C}`` for inspection by downstream
             components.
+
+        Notes
+        -----
+        Supplying all three of ``t0`` (or ``lambda_max_bound``), ``C``
+        (or ``lambda_min_bound``), and ``has_negative_eigenvalues`` results
+        in a circuit build that performs **no** classical eigendecomposition
+        of ``A``.
         """
         self._validate_inputs(A, b)
 
-        t0_val = dynamic_t0(A) if t0 is None else t0
-        C_val = C_factor(A) if C is None else C
+        if t0 is not None:
+            t0_val = t0
+        elif lambda_max_bound is not None:
+            t0_val = (np.pi / lambda_max_bound) * (1 - 0.05)
+        else:
+            t0_val = dynamic_t0(A)
 
-        return self._build_core_circuit(A, b, state_prep, t0_val, C_val)
+        if C is not None:
+            C_val = C
+        elif lambda_min_bound is not None:
+            C_val = 0.9 * lambda_min_bound
+        else:
+            C_val = C_factor(A)
+
+        return self._build_core_circuit(
+            A,
+            b,
+            state_prep,
+            t0_val,
+            C_val,
+            has_negative_eigenvalues=has_negative_eigenvalues,
+        )
 
     # ------------------------------------------------------------------
     # Validation
@@ -133,6 +178,8 @@ class HHL(QLSA):
         state_prep,
         t0: float,
         C: float,
+        *,
+        has_negative_eigenvalues: Optional[bool] = None,
     ) -> QLSACircuit:
         """Build the core HHL circuit shared among all readout methods.
 
@@ -166,7 +213,15 @@ class HHL(QLSA):
         circ.barrier()
 
         # 3. Eigenvalue-based rotation
-        self._apply_eig_oracle(circ, qpe_register, ancilla_flag_register[0], A, t0, C)
+        self._apply_eig_oracle(
+            circ,
+            qpe_register,
+            ancilla_flag_register[0],
+            A,
+            t0,
+            C,
+            has_negative_eigenvalues=has_negative_eigenvalues,
+        )
         circ.barrier()
 
         # 4. Measure ancilla flag
@@ -256,6 +311,16 @@ class HHL(QLSA):
         A: np.ndarray,
         t0: float,
         C: float,
+        *,
+        has_negative_eigenvalues: Optional[bool] = None,
     ) -> None:
         """Delegate to the selected :class:`~qlsas.algorithms.hhl.eig_oracles.EigOracle`."""
-        self.eig_oracle.apply(circ, qpe_register, ancilla_qubit, A, t0, C)
+        self.eig_oracle.apply(
+            circ,
+            qpe_register,
+            ancilla_qubit,
+            A,
+            t0,
+            C,
+            has_negative_eigenvalues=has_negative_eigenvalues,
+        )

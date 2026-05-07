@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 from qiskit.circuit.library import RYGate
 from qiskit.circuit.library import ExactReciprocalGate
@@ -14,6 +16,8 @@ def mcry_eig_inversion(
     A: np.ndarray,
     t0: float,
     C: float,
+    *,
+    has_negative_eigenvalues: Optional[bool] = None,
 ):
     """
     Multi-controlled RY (MCRY) eigenvalue-inversion routine.  Appends one
@@ -23,9 +27,15 @@ def mcry_eig_inversion(
     when ``A`` has negative eigenvalues; for SPD matrices unwrap would
     misinterpret QPE leakage on ``k >= 2**(m-1)`` as spurious negative
     eigenvalues and flip the sign of the rotation.
+
+    Pass ``has_negative_eigenvalues`` to declare A's sign profile and skip
+    the ``np.linalg.eigvalsh(A)`` fallback used when the flag is ``None``.
     """
     m = len(qpe_register)
-    has_negative_eigs = bool(np.any(np.linalg.eigvalsh(A) < -1e-12))
+    if has_negative_eigenvalues is None:
+        has_negative_eigs = bool(np.any(np.linalg.eigvalsh(A) < -1e-12))
+    else:
+        has_negative_eigs = bool(has_negative_eigenvalues)
 
     for k in range(1, 2**m):  # k=0 corresponds to phase=0; no inversion
         phi = k / (2**m)
@@ -48,6 +58,8 @@ def exact_reciprocal_eig_inversion(
     A: np.ndarray,
     t0: float,
     C: float,
+    *,
+    has_negative_eigenvalues: Optional[bool] = None,
 ):
     """
     Eigenvalue inversion via Qiskit's :class:`ExactReciprocalGate`.
@@ -60,9 +72,15 @@ def exact_reciprocal_eig_inversion(
     ``neg_vals=True``, so the physical-to-gate scaling depends on the
     flag: ``S = C*t0/(2*pi)`` for the former, ``S = C*t0/pi`` for the
     latter.
+
+    Pass ``has_negative_eigenvalues`` to declare A's sign profile and skip
+    the ``np.linalg.eigvalsh(A)`` fallback used when the flag is ``None``.
     """
     num_qpe_qubits = len(qpe_register)
-    has_negative_eigs = bool(np.any(np.linalg.eigvalsh(A) < -1e-12))
+    if has_negative_eigenvalues is None:
+        has_negative_eigs = bool(np.any(np.linalg.eigvalsh(A) < -1e-12))
+    else:
+        has_negative_eigs = bool(has_negative_eigenvalues)
 
     if has_negative_eigs:
         S = (C * t0) / np.pi
@@ -81,9 +99,11 @@ def ucry_eig_inversion(
     circ: QuantumCircuit,
     qpe_register: QuantumRegister,
     ancilla_qubit,
-    A: np.ndarray, # TODO: make boolean input for whether A has negative eigs
+    A: np.ndarray,
     t0: float,
     C: float,
+    *,
+    has_negative_eigenvalues: Optional[bool] = None,
 ):
     """
     Uniformly-controlled RY (UCRY) eigenvalue-inversion routine.
@@ -92,9 +112,15 @@ def ucry_eig_inversion(
     as a recursive CNOT + RY tree (Möttönen et al., 2004), achieving
     ``O(2^m)`` circuit depth instead of ``O(m · 2^m)`` and using no
     ancilla qubits.
+
+    Pass ``has_negative_eigenvalues`` to declare A's sign profile and skip
+    the ``np.linalg.eigvalsh(A)`` fallback used when the flag is ``None``.
     """
     m = len(qpe_register)
-    has_negative_eigs = bool(np.any(np.linalg.eigvalsh(A) < -1e-12))
+    if has_negative_eigenvalues is None:
+        has_negative_eigs = bool(np.any(np.linalg.eigvalsh(A) < -1e-12))
+    else:
+        has_negative_eigs = bool(has_negative_eigenvalues)
 
     thetas = np.zeros(2**m)  # thetas[0] = 0: phase=0 ⇒ no inversion
     for k in range(1, 2**m):

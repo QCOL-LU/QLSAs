@@ -151,12 +151,30 @@ class QuantumLinearSolver:
         verbose: bool = True,
         t0: Optional[float] = None,
         C: Optional[float] = None,
+        has_negative_eigenvalues: Optional[bool] = None,
+        lambda_max_bound: Optional[float] = None,
+        lambda_min_bound: Optional[float] = None,
     ) -> SolveResult:
-        """Run the full workflow and return a :class:`SolveResult`."""
+        """Run the full workflow and return a :class:`SolveResult`.
+
+        ``has_negative_eigenvalues``, ``lambda_max_bound``, and
+        ``lambda_min_bound`` are forwarded to
+        :meth:`HHL.build_circuit <qlsas.algorithms.hhl.hhl.HHL.build_circuit>`;
+        supplying them lets callers avoid the classical
+        ``np.linalg.eigvalsh(A)`` calls that would otherwise be used to
+        derive ``t0``, ``C``, and the oracle's sign-profile flag.
+        """
 
         # 1. Build core QLSA circuit (no readout yet)
         qlsa_circuit: QLSACircuit = self.qlsa.build_circuit(
-            A, b, self.state_prep, t0=t0, C=C,
+            A,
+            b,
+            self.state_prep,
+            t0=t0,
+            C=C,
+            has_negative_eigenvalues=has_negative_eigenvalues,
+            lambda_max_bound=lambda_max_bound,
+            lambda_min_bound=lambda_min_bound,
         )
 
         # 2. Multi-circuit readouts (HRF, future shadow tomography, ...) own
