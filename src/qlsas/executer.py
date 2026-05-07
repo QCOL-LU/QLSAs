@@ -83,6 +83,16 @@ class Executer:
     def session_active(self) -> bool:
         return self._session is not None
 
+    @property
+    def active_session(self) -> Optional[Session]:
+        """The active IBM Runtime ``Session`` or ``None``.
+
+        Used by callers (e.g. the solver) that want to forward the session
+        to a backend adapter's ``run_compiled`` so jobs share priority
+        scheduling.
+        """
+        return self._session
+
     @contextmanager
     def session(
         self,

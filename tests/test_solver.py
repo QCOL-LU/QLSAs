@@ -4,6 +4,8 @@ import numpy as np
 import numpy.linalg as LA
 import pytest
 
+from qlsas.backends.base import Backend, CompiledArtifact
+from qlsas.measurement_result import MeasurementResult
 from qlsas.solver import QuantumLinearSolver, SolveResult
 from qlsas.state_prep import StatePrep, DefaultStatePrep
 from qlsas.algorithms.hhl import HHL, MCRYEigOracle
@@ -54,32 +56,35 @@ class _StubReadout:
         return np.array([1.0, 0.0]), 1.0, 0.0
 
 
-class _RecordingExecuter:
-    def __init__(self):
-        self.session_active = False
-        self.calls = []
+class _RecordingBackend(Backend):
+    """Test double for the Backend protocol that captures every call.
 
-    def run(self, transpiled_circuit, backend, shots, ibm_options=None, verbose=True):
-        from qlsas.measurement_result import MeasurementResult
-        self.calls.append(
+    Used to verify the solver threads ``ibm_options`` and other run-time
+    parameters into the adapter rather than dropping them on the floor.
+    """
+
+    def __init__(self):
+        self.compile_calls = []
+        self.run_calls = []
+
+    @property
+    def name(self) -> str:
+        return "recording-backend"
+
+    def compile(self, qc, optimization_level=2):
+        self.compile_calls.append((qc, optimization_level))
+        return CompiledArtifact(payload="fake-transpiled-circuit")
+
+    def run_compiled(self, artifact, shots=1024, *, verbose=True, **kwargs):
+        self.run_calls.append(
             {
-                "transpiled_circuit": transpiled_circuit,
-                "backend": backend,
+                "artifact": artifact,
                 "shots": shots,
-                "ibm_options": ibm_options,
+                "ibm_options": kwargs.get("ibm_options"),
+                "session": kwargs.get("session"),
             }
         )
         return MeasurementResult("fake-result")
-
-
-class _FakeTranspiler:
-    def __init__(self, circuit, backend, optimization_level):
-        self.circuit = circuit
-        self.backend = backend
-        self.optimization_level = optimization_level
-
-    def optimize(self):
-        return "fake-transpiled-circuit"
 
 
 # ===================================================================
@@ -115,29 +120,26 @@ class TestConstructorDefaults:
 
 class TestIBMOptionsThreading:
 
-    def test_solver_passes_ibm_options_to_executer(self, monkeypatch):
-        monkeypatch.setattr("qlsas.solver.Transpiler", _FakeTranspiler)
-
+    def test_solver_passes_ibm_options_to_backend(self):
         ibm_options = IBMExecutionOptions(
             enable_error_mitigation=True,
             enable_dynamical_decoupling=True,
         )
-        executer = _RecordingExecuter()
+        backend = _RecordingBackend()
         solver = QuantumLinearSolver(
             qlsa=_StubQLSA(),
             readout=_StubReadout(),
-            backend=object(),
+            backend=backend,
             state_prep=DefaultStatePrep(),
             shots=128,
             ibm_options=ibm_options,
-            executer=executer,
         )
 
         result = solver.solve(np.eye(2), np.array([1.0, 0.0]), verbose=False)
 
         assert isinstance(result, SolveResult)
-        assert len(executer.calls) == 1
-        assert executer.calls[0]["ibm_options"] is ibm_options
+        assert len(backend.run_calls) == 1
+        assert backend.run_calls[0]["ibm_options"] is ibm_options
 
 
 # ===================================================================

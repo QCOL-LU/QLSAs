@@ -9,6 +9,8 @@ from qiskit.providers.backend import BackendV2
 
 import numpy as np
 
+from qlsas.backends.base import Backend, CompiledArtifact
+from qlsas.backends.dispatch import adapt
 from qlsas.quantinuum_config import QuantinuumBackendConfig
 from qlsas.executer import Executer
 from qlsas.ibm_options import IBMExecutionOptions
@@ -22,7 +24,6 @@ from qlsas.readout.base import (
     TomographyResult,
 )
 from qlsas.measurement_result import MeasurementResult
-from qlsas.transpiler import Transpiler
 
 
 @dataclass
@@ -109,7 +110,7 @@ class QuantumLinearSolver:
         self,
         qlsa: QLSA,
         readout: Readout,
-        backend: Union[BackendV2, QuantinuumBackendConfig],
+        backend: Union[BackendV2, QuantinuumBackendConfig, Backend],
         *,
         state_prep: Optional[StatePrep] = None,   # defaults to DefaultStatePrep()
         shots: int = 1024,
@@ -131,14 +132,7 @@ class QuantumLinearSolver:
         self.optimization_level = optimization_level
         self.ibm_options = ibm_options
         self.executer = executer or Executer(ibm_options=ibm_options)
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    @property
-    def _is_quantinuum(self) -> bool:
-        return isinstance(self.backend, QuantinuumBackendConfig)
+        self._adapter: Backend = adapt(self.backend, ibm_options=ibm_options)
 
     # ------------------------------------------------------------------
     # Main entry point
@@ -182,25 +176,19 @@ class QuantumLinearSolver:
         if isinstance(self.readout, MultiCircuitReadout):
             return self._solve_multi(qlsa_circuit, A, b, verbose=verbose)
 
-        # 3. Single-circuit path: append readout measurements, transpile,
+        # 3. Single-circuit path: append readout measurements, compile,
         #    execute, post-process.
         self.circuit = self.readout.apply(qlsa_circuit, state_prep=self.state_prep)
-
-        transpiler = Transpiler(
-            circuit=self.circuit,
-            backend=self.backend,
-            optimization_level=self.optimization_level,
-        )
-        self.transpiled_circuit = transpiler.optimize()
+        artifact = self._adapter.compile(self.circuit, self.optimization_level)
+        self.transpiled_circuit = artifact.payload
 
         if self.target_successful_shots is not None:
             return self._solve_until_successful_shots(
-                self.transpiled_circuit, A, b, verbose=verbose,
-                transpiler=transpiler,
+                artifact, A, b, verbose=verbose,
                 success_criterion=qlsa_circuit.success_criterion,
             )
 
-        result = self._execute(transpiler, verbose=verbose)
+        result = self._execute(artifact, verbose=verbose)
         return _to_solve_result(self.readout.process(result, A, b, verbose=verbose))
 
     # ------------------------------------------------------------------
@@ -227,28 +215,25 @@ class QuantumLinearSolver:
                 f"{type(readout).__name__}. Multi-circuit readouts require a "
                 f"fixed shot budget across all circuits."
             )
-        if self._is_quantinuum:
+        if not self._adapter.supports_multi_circuit:
             raise NotImplementedError(
-                f"{type(readout).__name__} does not yet support Quantinuum backends."
+                f"{type(readout).__name__} is a multi-circuit readout, but "
+                f"backend {self._adapter.name!r} has not been validated for "
+                f"the multi-circuit dispatch path."
             )
 
         circuits = readout.build_circuits(qlsa_circuit)
         results: list[MeasurementResult] = []
-        transpiled_circuits = []
+        artifacts: list[CompiledArtifact] = []
         for circ in circuits:
-            t = Transpiler(
-                circuit=circ,
-                backend=self.backend,
-                optimization_level=self.optimization_level,
-            )
-            tc = t.optimize()
-            transpiled_circuits.append(tc)
-            self.transpiled_circuit = tc
-            results.append(self._execute(t, verbose=verbose))
+            artifact = self._adapter.compile(circ, self.optimization_level)
+            artifacts.append(artifact)
+            self.transpiled_circuit = artifact.payload
+            results.append(self._execute(artifact, verbose=verbose))
 
         # Restore the base circuit's transpiled form so self.transpiled_circuit
         # is sensible after solve() (refiner stashes it per iteration).
-        self.transpiled_circuit = transpiled_circuits[0]
+        self.transpiled_circuit = artifacts[0].payload
 
         tr = readout.combine_results(
             results, A, b,
@@ -276,25 +261,18 @@ class QuantumLinearSolver:
     # ------------------------------------------------------------------
 
     def _execute(
-        self, transpiler: Transpiler, verbose: bool = True, shots: int | None = None,
+        self,
+        artifact: CompiledArtifact,
+        verbose: bool = True,
+        shots: int | None = None,
     ) -> MeasurementResult:
         effective_shots = shots if shots is not None else self.shots
-        if self._is_quantinuum:
-            return self.executer.run(
-                self.transpiled_circuit,
-                self.backend,
-                effective_shots,
-                verbose=verbose,
-                register_infos=transpiler.register_infos,
-                measurement_plan=transpiler.measurement_plan,
-                optimization_level=self.optimization_level,
-            )
-        return self.executer.run(
-            self.transpiled_circuit,
-            self.backend,
+        return self._adapter.run_compiled(
+            artifact,
             effective_shots,
-            ibm_options=self.ibm_options,
             verbose=verbose,
+            session=self.executer.active_session,
+            ibm_options=self.ibm_options,
         )
 
     # ------------------------------------------------------------------
@@ -303,34 +281,36 @@ class QuantumLinearSolver:
 
     def _solve_until_successful_shots(
         self,
-        transpiled_circuit,
+        artifact: CompiledArtifact,
         A: np.ndarray,
         b: np.ndarray,
         verbose: bool = True,
-        transpiler: Transpiler | None = None,
         success_criterion: SuccessCriterion | None = None,
     ) -> SolveResult:
-        if self._is_quantinuum:
+        # Quantinuum's Selene/Nexus paths can't stream shots in batches, so
+        # we run the full budget once and trim on the client side.  IBM /
+        # Aer support batched submission and accumulate until the target is
+        # met.
+        if isinstance(self.backend, QuantinuumBackendConfig):
             return self._quantinuum_successful_shots(
-                A, b, verbose=verbose, transpiler=transpiler,
+                artifact, A, b, verbose=verbose,
                 success_criterion=success_criterion,
             )
         return self._ibm_successful_shots(
-            transpiled_circuit, A, b, verbose=verbose,
+            artifact, A, b, verbose=verbose,
             success_criterion=success_criterion,
         )
 
     def _quantinuum_successful_shots(
         self,
+        artifact: CompiledArtifact,
         A: np.ndarray,
         b: np.ndarray,
         verbose: bool = True,
-        transpiler: Transpiler | None = None,
         success_criterion: SuccessCriterion | None = None,
     ) -> SolveResult:
-        assert transpiler is not None
         total_shots = self.max_total_shots or self.shots
-        result = self._execute(transpiler, verbose=verbose, shots=total_shots)
+        result = self._execute(artifact, verbose=verbose, shots=total_shots)
         counts = result.get_counts(self.readout.register_names)
         trimmed = _trim_counts_to_target(
             counts, self.target_successful_shots, success_criterion,
@@ -341,7 +321,7 @@ class QuantumLinearSolver:
 
     def _ibm_successful_shots(
         self,
-        transpiled_circuit,
+        artifact: CompiledArtifact,
         A: np.ndarray,
         b: np.ndarray,
         verbose: bool = True,
@@ -363,13 +343,7 @@ class QuantumLinearSolver:
 
         try:
             while True:
-                result = self.executer.run(
-                    transpiled_circuit,
-                    self.backend,
-                    batch_size,
-                    ibm_options=self.ibm_options,
-                    verbose=verbose,
-                )
+                result = self._execute(artifact, verbose=verbose, shots=batch_size)
                 counts = result.get_counts(self.readout.register_names)
 
                 num_batch_successful = sum(
