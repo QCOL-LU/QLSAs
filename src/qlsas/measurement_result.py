@@ -56,7 +56,8 @@ class MeasurementResult:
         For Qiskit results, *register_names* are joined via
         ``SamplerPubResult.join_data`` before extracting counts.  The order
         of the names determines the bit-ordering of the returned bitstrings:
-        the *last* name's bits appear as the LSBs (rightmost characters).
+        the *first* name's bits appear as the LSBs (rightmost characters);
+        the last name's bits appear at the leftmost positions.
 
         For dict results, *register_names* is ignored and the dict is
         returned directly.

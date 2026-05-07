@@ -181,9 +181,12 @@ class Readout(ABC):
         """Ordered list of classical register names used by this readout.
 
         The order matches the bit ordering expected by :meth:`process`:
-        the *last* name's bits appear as the LSBs (rightmost characters) of
+        the *first* name's bits appear as the LSBs (rightmost characters) of
         each bitstring returned by
         :meth:`~qlsas.measurement_result.MeasurementResult.get_counts`.
+        Concretely, place success-criterion registers first so they end up at
+        the rightmost positions where :meth:`SuccessCriterion.matches` reads
+        them.
         """
         ...
 
