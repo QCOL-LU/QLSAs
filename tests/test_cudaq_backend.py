@@ -135,9 +135,14 @@ class TestBellParity:
     """Bell-state byte-exact parity check between Aer and CUDA-Q's qpp-cpu.
 
     Both targets are deterministic statevector simulators with the same
-    seed, so the dicts must agree byte-for-byte across all keys.  This is
-    the regression net for the bitstring-ordering convention (see
-    :attr:`CudaqBackend.REVERSE_BITSTRINGS`).
+    seed, so the dicts must agree byte-for-byte across all keys.
+
+    The bitstring-ordering convention is well-established: CUDA-Q places
+    the first-measured register at the MSB; Qiskit places it at the LSB
+    (a single ``[::-1]`` flips between the two — verified by the parallel
+    ``cuda-q-refactor`` branch's post-processor).  This test catches any
+    future CUDA-Q regression that flips the convention; the fix is
+    ``CudaqBackend.REVERSE_BITSTRINGS = False``.
     """
 
     def test_bell_state_byte_exact(self):

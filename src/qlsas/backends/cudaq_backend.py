@@ -24,15 +24,22 @@ Translation strategy
 Counts assembly
 ---------------
 CUDA-Q's :class:`SampleResult` is a dict-like ``{joined_bitstring:
-count}``.  The byte order of the joined string depends on the kernel's
-measurement declaration order, which mirrors the source Qiskit circuit's
-``cregs`` order.  Qiskit's :meth:`SamplerPubResult.join_data` convention
-places the *first* register name at the **rightmost** (LSB) of the
-joined string; CUDA-Q's native order is typically the reverse.  We
-honour a class-level ``REVERSE_BITSTRINGS`` flag (default ``True``) and
-the Bell-state byte-exact parity test in
-``tests/test_cudaq_backend.py`` is the regression net.  If that test
-fails on a fresh CUDA-Q install, flip the flag.
+count}`` in which the **first**-measured register sits at the *leftmost*
+(MSB) of the joined string; Qiskit's :meth:`SamplerPubResult.join_data`
+places the first-named register at the *rightmost* (LSB).  A whole-
+string reversal (``bitstring[::-1]``) flips between the two conventions
+and — as a happy algebraic side effect — also flips the within-register
+bit order, which the two frameworks disagree on as well.  So a single
+reversal is sufficient.  This is corroborated by the parallel
+``cuda-q-refactor`` branch's post-processor, whose explicit ``key[0]``
+ancilla check + ``key[-1:0:-1]`` solution-register reverse is the same
+transformation, only embedded in the readout.  See
+``CudaqBackend._counts_from_sample_result`` for details.
+
+The class-level ``REVERSE_BITSTRINGS`` flag (default ``True``) controls
+this; the Bell-state byte-exact parity test in
+``tests/test_cudaq_backend.py`` is the regression net if a future
+CUDA-Q upgrade ever flips this convention.
 
 Process-global state
 --------------------
@@ -248,7 +255,19 @@ class CudaqBackend(Backend):
         cudaq = _import_cudaq()
 
         with _CUDAQ_TARGET_LOCK:
-            cudaq.set_target(self._target)
+            # Fail fast if the target isn't built into this CUDA-Q install
+            # (e.g. asking for "nvidia" on a GPU-less box).  Skip when the
+            # current target already matches — set_target on the same
+            # target is wasteful and noisy.
+            if cudaq.get_target().name != self._target:
+                if not cudaq.has_target(self._target):
+                    raise RuntimeError(
+                        f"CUDA-Q target {self._target!r} is not available in this "
+                        f"cuda-quantum install. Pick one supported by your build "
+                        f"(qpp-cpu always works on CPU; nvidia* targets need a "
+                        f"CUDA-capable GPU)."
+                    )
+                cudaq.set_target(self._target)
             if self._seed is not None:
                 cudaq.set_random_seed(self._seed)
             if verbose:
@@ -266,11 +285,23 @@ class CudaqBackend(Backend):
     def _counts_from_sample_result(cls, sample_result: Any) -> dict[str, int]:
         """Translate CUDA-Q's :class:`SampleResult` to a counts dict.
 
-        Qiskit's :meth:`SamplerPubResult.join_data` convention places the
-        *first* register name at the rightmost (LSB) of the joined
-        bitstring; CUDA-Q's native order is typically the reverse, so we
-        flip each key by default.  See class docstring + the Bell-state
-        byte-exact parity test for verification.
+        CUDA-Q places the *first*-measured register at the **leftmost
+        (MSB)** of the joined bitstring; Qiskit's
+        :meth:`SamplerPubResult.join_data` places the first-named register
+        at the **rightmost (LSB)**.  Reversing the entire string flips
+        between the two conventions and — by happy algebra — also
+        flips the within-register bit order, which Qiskit/CUDA-Q also
+        disagree on.  So a single ``bitstring[::-1]`` is sufficient.
+
+        This convention is corroborated by the parallel cuda-q-refactor
+        branch's post-processor, which checks ``key[0] == '1'`` for the
+        ancilla and ``int(key[-1:0:-1], base=2)`` for the solution
+        register — exactly the layout that ``[::-1]`` translates from.
+
+        Bell-state byte-exact parity test
+        (``test_cudaq_backend.py::TestBellParity``) is the regression net
+        if a future CUDA-Q upgrade ever flips this; the fix is to set
+        ``REVERSE_BITSTRINGS = False``.
         """
         try:
             pairs = list(sample_result.items())

@@ -530,21 +530,26 @@ to native-CUDA-Q kernels (Qrisp generates them directly), so we
 deliberately do **not** maintain a parallel `@cudaq.kernel` HHL
 implementation in this repo.
 
-### Bitstring endianness — the regression net
+### Bitstring endianness — converged on the right convention
 
-CUDA-Q's `SampleResult` joins per-register measurements in the order
-classical registers were declared in the kernel; Qiskit's `join_data`
-convention places `cregs[0]` at the **rightmost (LSB)** of the joined
-bitstring (verified empirically — see [docs/architecture.md
-Conventions](#conventions) and the `register_names` docstrings).
-`CudaqBackend._counts_from_sample_result` reverses each CUDA-Q
-bitstring to match the Qiskit convention.
+CUDA-Q joins per-register measurements with the **first**-measured
+register at the *leftmost* (MSB) of the bitstring; Qiskit's `join_data`
+places the first-named register at the *rightmost* (LSB).  A whole-
+string reversal flips between the two — and as a happy algebraic side
+effect, the within-register bit order (which Qiskit and CUDA-Q also
+disagree on) flips correctly too.  So a single
+``CudaqBackend._counts_from_sample_result`` reversal is sufficient.
+
+This convention is independently corroborated by the parallel
+`cuda-q-refactor` branch's `post_processor.py`, whose `key[0] == '1'`
+ancilla check and `int(key[-1:0:-1], base=2)` solution-register reverse
+are exactly the layout that `[::-1]` translates from.  We are not
+guessing — both code paths converge on the same byte order.
 
 `tests/test_cudaq_backend.py::TestBellParity::test_bell_state_byte_exact`
 runs an Aer / `qpp-cpu` parity check on the Bell state and is the
-**regression net for endianness**.  If a future CUDA-Q upgrade flips
-the byte order, that test fails loudly and the fix is to flip the
-`CudaqBackend.REVERSE_BITSTRINGS` class flag.
+**regression net** if a future CUDA-Q upgrade ever flips this; the fix
+is to set `CudaqBackend.REVERSE_BITSTRINGS = False`.
 
 ### Process-global `set_target` lock
 
