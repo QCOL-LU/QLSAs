@@ -31,6 +31,10 @@ hrf = [
   "treelib>=1.7.0",
   "mthree==3.0.0",
 ]
+# CUDA-Q is officially supported only on Linux (x86_64 / aarch64) with a CUDA-
+# capable GPU.  The qpp-cpu target works without a GPU, useful for parity tests.
+# Install with:  pip install -e .[cudaq]
+cudaq = ["cuda-quantum>=0.8"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -41,4 +45,5 @@ pythonpath = ["src"]
 markers = [
   "slow: marks tests as slow (deselect with '-m \"not slow\"')",
   "hardware: marks tests that require real IBM or Quantinuum backends; skipped unless explicitly enabled",
+  "cudaq: marks tests that require CUDA-Q (cuda-quantum); skipped unless cudaq is importable",
 ]

@@ -139,8 +139,11 @@ class TestExecution:
             ex.run(None, {"bad": True}, shots=10, verbose=False)
 
     def test_run_qiskit_applies_ibm_options_for_ibm_backend(self, monkeypatch):
-        monkeypatch.setattr("qlsas.executer.Sampler", _FakeSampler)
-        monkeypatch.setattr("qlsas.executer.IBMBackend", _FakeIBMBackend)
+        # Sampler/IBMBackend now live behind the QiskitBackend adapter; the
+        # legacy executer module re-exports the names but no longer invokes
+        # them directly.
+        monkeypatch.setattr("qlsas.backends.qiskit_backend.Sampler", _FakeSampler)
+        monkeypatch.setattr("qlsas.backends.qiskit_backend.IBMBackend", _FakeIBMBackend)
 
         ibm_options = IBMExecutionOptions(
             enable_error_mitigation=True,
@@ -167,8 +170,8 @@ class TestExecution:
         assert sampler.options.twirling.shots_per_randomization == 16
 
     def test_run_qiskit_ignores_ibm_options_for_non_ibm_backend(self, monkeypatch, aer_backend):
-        monkeypatch.setattr("qlsas.executer.Sampler", _FakeSampler)
-        monkeypatch.setattr("qlsas.executer.IBMBackend", _FakeIBMBackend)
+        monkeypatch.setattr("qlsas.backends.qiskit_backend.Sampler", _FakeSampler)
+        monkeypatch.setattr("qlsas.backends.qiskit_backend.IBMBackend", _FakeIBMBackend)
 
         ibm_options = IBMExecutionOptions(
             enable_error_mitigation=True,

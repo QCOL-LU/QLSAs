@@ -46,6 +46,16 @@ class MeasurementResult:
     def __init__(self, raw: Any) -> None:
         self._raw = raw
 
+    @property
+    def raw(self) -> Any:
+        """The underlying ``SamplerPubResult`` / ``dict`` / ... result.
+
+        Exposed for back-compat shims that need to return the unwrapped
+        value (e.g. ``Executer.run_qiskit``).  New code should use
+        :meth:`get_counts` / :meth:`get_bitstrings` instead.
+        """
+        return self._raw
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -56,7 +66,8 @@ class MeasurementResult:
         For Qiskit results, *register_names* are joined via
         ``SamplerPubResult.join_data`` before extracting counts.  The order
         of the names determines the bit-ordering of the returned bitstrings:
-        the *last* name's bits appear as the LSBs (rightmost characters).
+        the *first* name's bits appear as the LSBs (rightmost characters);
+        the last name's bits appear at the leftmost positions.
 
         For dict results, *register_names* is ignored and the dict is
         returned directly.

@@ -1,34 +1,43 @@
+"""Backwards-compatible facade over the :mod:`qlsas.backends` adapters.
+
+``Executer`` retains the public API existing call sites (solver, refiner,
+notebooks, tests) depend on, but the per-backend execution logic now
+lives on the :class:`~qlsas.backends.base.Backend` adapters.  Each
+``Executer.run*`` method picks the appropriate adapter and delegates.
+
+The IBM Runtime ``Session`` lifecycle continues to live on ``Executer``
+in PR A1 because the solver and refiner currently hold an executer
+instance and call ``open_session`` / ``close_session`` on it directly.
+PR A2 will move session ownership to the backend adapter and remove
+this facade.
+"""
+
 from __future__ import annotations
 
 from contextlib import contextmanager
 from typing import Any, Generator, Optional, Union
-import time
 
 from qiskit import QuantumCircuit
-from qiskit_ibm_runtime import IBMBackend, SamplerV2 as Sampler, Session
+from qiskit_ibm_runtime import IBMBackend, SamplerV2 as Sampler, Session  # noqa: F401  re-exported for monkeypatch back-compat
 from qiskit.providers.backend import BackendV2
-from qiskit.providers.jobstatus import JobStatus
 from pytket.circuit import Circuit
 
+from qlsas.backends.base import Backend, CompiledArtifact
+from qlsas.backends.dispatch import adapt
+from qlsas.backends.qiskit_backend import QiskitBackend
+from qlsas.backends.quantinuum_backend import QuantinuumBackend
 from qlsas.quantinuum_config import QuantinuumBackendConfig
 from qlsas.measurement_result import MeasurementResult
-from qlsas.guppy_runner import (
-    RegisterInfo,
-    RegisterMeasurement,
-    build_and_run_guppy,
-    run_nexus_pytket,
-)
-from qlsas.ibm_options import (
-    IBMExecutionOptions,
-    apply_ibm_error_mitigation_options,
-)
+from qlsas.guppy_runner import RegisterInfo, RegisterMeasurement
+from qlsas.ibm_options import IBMExecutionOptions
 
 
 class Executer:
-    """Executer class for running circuits on target backends.
+    """Coordinator that dispatches execution to a Backend adapter.
 
-    Supports IBM/Qiskit backends (via SamplerV2) and Quantinuum backends
-    (via Guppy/Selene/Nexus).
+    Holds an optional IBM Runtime ``Session`` so that batches of jobs
+    submitted to the same IBM backend share priority scheduling.  The
+    session is a no-op for non-IBM backends.
     """
 
     def __init__(self, ibm_options: Optional[IBMExecutionOptions] = None) -> None:
@@ -36,35 +45,34 @@ class Executer:
         self.ibm_options = ibm_options
 
     # ------------------------------------------------------------------
-    # Session lifecycle (IBM only; no-op for other backends)
+    # IBM Runtime Session lifecycle (no-op for non-IBM backends)
     # ------------------------------------------------------------------
 
     def open_session(
         self,
-        backend: Union[BackendV2, QuantinuumBackendConfig],
+        backend: Union[BackendV2, QuantinuumBackendConfig, Backend],
         max_time: Optional[str] = None,
         verbose: bool = True,
     ) -> None:
-        """Open an IBM Runtime Session for the given backend.
-
-        For non-IBM backends (AerSimulator, QuantinuumBackendConfig) the call
-        is a no-op so that callers do not need to guard on backend type.
-        """
         if self._session is not None:
             return
 
-        if not isinstance(backend, IBMBackend):
+        underlying = (
+            backend.underlying  # type: ignore[attr-defined]
+            if isinstance(backend, QiskitBackend)
+            else backend
+        )
+        if not isinstance(underlying, IBMBackend):
             return
 
-        kwargs: dict[str, Any] = {"backend": backend}
+        kwargs: dict[str, Any] = {"backend": underlying}
         if max_time is not None:
             kwargs["max_time"] = max_time
         self._session = Session(**kwargs)
         if verbose:
-            print(f">>> Opened IBM Runtime Session (backend={backend.name})")
+            print(f">>> Opened IBM Runtime Session (backend={underlying.name})")
 
     def close_session(self, verbose: bool = True) -> None:
-        """Close the active session, if any."""
         if self._session is not None:
             self._session.close()
             if verbose:
@@ -75,14 +83,23 @@ class Executer:
     def session_active(self) -> bool:
         return self._session is not None
 
+    @property
+    def active_session(self) -> Optional[Session]:
+        """The active IBM Runtime ``Session`` or ``None``.
+
+        Used by callers (e.g. the solver) that want to forward the session
+        to a backend adapter's ``run_compiled`` so jobs share priority
+        scheduling.
+        """
+        return self._session
+
     @contextmanager
     def session(
         self,
-        backend: Union[BackendV2, QuantinuumBackendConfig],
+        backend: Union[BackendV2, QuantinuumBackendConfig, Backend],
         max_time: Optional[str] = None,
         verbose: bool = True,
     ) -> Generator[None, None, None]:
-        """Context manager that opens and closes a session."""
         self.open_session(backend, max_time=max_time, verbose=verbose)
         try:
             yield
@@ -96,7 +113,7 @@ class Executer:
     def run(
         self,
         transpiled_circuit: Union[QuantumCircuit, Circuit],
-        backend: Union[BackendV2, QuantinuumBackendConfig],
+        backend: Union[BackendV2, QuantinuumBackendConfig, Backend],
         shots: int,
         ibm_options: Optional[IBMExecutionOptions] = None,
         verbose: bool = True,
@@ -104,109 +121,66 @@ class Executer:
         measurement_plan: Optional[list[RegisterMeasurement]] = None,
         optimization_level: int = 2,
     ) -> MeasurementResult:
-        """Run the circuit on the backend and return a :class:`MeasurementResult`.
+        """Run the transpiled circuit on the backend; return :class:`MeasurementResult`."""
+        try:
+            adapter = adapt(backend, ibm_options=ibm_options or self.ibm_options)
+        except ValueError as exc:
+            raise ValueError(f"Invalid backend type: {type(backend).__name__}") from exc
 
-        The returned object exposes a uniform :meth:`~MeasurementResult.get_counts`
-        / :meth:`~MeasurementResult.get_bitstrings` interface regardless of
-        whether the backend is IBM (Aer / real hardware) or Quantinuum.
-
-        ``optimization_level`` is forwarded to ``qnx.start_compile_job`` for
-        Nexus cloud execution and ignored for IBM and local Selene backends.
-        """
-        if isinstance(backend, (BackendV2, IBMBackend)):
-            raw = self.run_qiskit(
-                transpiled_circuit,
-                backend,
-                shots,
-                ibm_options=ibm_options,
-                verbose=verbose,
-            )
-        elif isinstance(backend, QuantinuumBackendConfig):
+        if isinstance(adapter, QuantinuumBackend):
             if register_infos is None or measurement_plan is None:
                 raise ValueError(
                     "register_infos and measurement_plan are required for "
                     "Quantinuum execution. These are produced by "
                     "Transpiler.optimize_quantinuum()."
                 )
-            raw = self.run_quantinuum(
-                transpiled_circuit,
-                backend,
-                shots,
-                register_infos=register_infos,
-                measurement_plan=measurement_plan,
-                verbose=verbose,
-                optimization_level=optimization_level,
+            artifact = CompiledArtifact(
+                payload=transpiled_circuit,
+                backend_metadata={
+                    "register_infos": register_infos,
+                    "measurement_plan": measurement_plan,
+                    "optimization_level": optimization_level,
+                },
             )
-        else:
-            raise ValueError(f"Invalid backend type: {type(backend)}")
-        return MeasurementResult(raw)
+            return adapter.run_compiled(artifact, shots, verbose=verbose)
+
+        # Qiskit / Aer / IBM path
+        artifact = CompiledArtifact(payload=transpiled_circuit)
+        return adapter.run_compiled(
+            artifact,
+            shots,
+            verbose=verbose,
+            session=self._session,
+            ibm_options=ibm_options,
+        )
 
     # ------------------------------------------------------------------
-    # IBM / Qiskit
+    # Legacy direct paths (kept as thin shims for back-compat)
     # ------------------------------------------------------------------
 
     def run_qiskit(
         self,
         transpiled_circuit: QuantumCircuit,
-        backend: BackendV2,
+        backend: Union[BackendV2, IBMBackend],
         shots: int,
         ibm_options: Optional[IBMExecutionOptions] = None,
         verbose: bool = True,
     ) -> Any:
-        """Run the circuit on a Qiskit backend.
+        """Direct Qiskit-path execution; returns the unwrapped raw result.
 
-        If an IBM Runtime Session is active the job is submitted through it
-        (priority scheduling, no re-queuing).  Otherwise the job runs in
-        standalone job mode.
+        Wraps *backend* in a :class:`QiskitBackend` directly (bypassing
+        :func:`adapt`) so callers can pass duck-typed fakes in tests.
         """
-        if self._session is not None:
-            sampler = Sampler(mode=self._session)
-        else:
-            sampler = Sampler(mode=backend)
-
-        effective_ibm_options = ibm_options or self.ibm_options
-        if isinstance(backend, IBMBackend):
-            apply_ibm_error_mitigation_options(sampler.options, effective_ibm_options)
-
-        job = sampler.run([transpiled_circuit], shots=shots)
-        job_id = job.job_id()
-        if verbose:
-            print(f">>> Job ID: {job_id}")
-        self._wait_for_qiskit_job(job, poll_interval_s=5, verbose=verbose)
-
-        result = job.result()[0]
-        return result
-
-    def _wait_for_qiskit_job(
-        self, job: Any, poll_interval_s: float = 5, verbose: bool = True
-    ) -> str:
-        """Poll a Qiskit job until it reaches a terminal status."""
-        terminal_state_names = {"DONE", "CANCELLED", "ERROR"}
-
-        def status_name(s: object) -> str:
-            return s.name if isinstance(s, JobStatus) else str(s)
-
-        status = job.status()
-        last_len = 0
-        while status_name(status) not in terminal_state_names:
-            if verbose:
-                msg = f">>> Job Status: {status_name(status)}..."
-                pad = " " * max(0, last_len - len(msg))
-                print(f"\r{msg}{pad}", end="", flush=True)
-                last_len = len(msg)
-            time.sleep(poll_interval_s)
-            status = job.status()
-
-        final_status = status_name(status)
-        if verbose:
-            msg = f">>> Job Status: {final_status}"
-            pad = " " * max(0, last_len - len(msg))
-            print(f"\r{msg}{pad}", flush=True)
-        return final_status
-
-    # ------------------------------------------------------------------
-    # Quantinuum (via Guppy)
-    # ------------------------------------------------------------------
+        adapter = QiskitBackend(backend, ibm_options=ibm_options or self.ibm_options)
+        artifact = CompiledArtifact(payload=transpiled_circuit)
+        result = adapter.run_compiled(
+            artifact,
+            shots,
+            verbose=verbose,
+            session=self._session,
+            ibm_options=ibm_options,
+        )
+        return result.raw
 
     def run_quantinuum(
         self,
@@ -218,31 +192,15 @@ class Executer:
         verbose: bool = True,
         optimization_level: int = 2,
     ) -> dict[str, int]:
-        """Run the circuit on a Quantinuum backend.
-
-        Dispatches to one of two paths based on ``backend.use_local_emulator``:
-
-        - **Local Selene**: wraps the measurement-free pytket circuit in a Guppy
-          program and runs it on the local Selene emulator.
-        - **Nexus cloud**: uploads the pytket circuit (with measurements) to
-          Nexus, runs a compile job at *optimization_level*, then submits an
-          execute job and parses the ``BackendResult``.
-        """
-        if backend.use_local_emulator:
-            return build_and_run_guppy(
-                pytket_circuit=transpiled_circuit,
-                register_infos=register_infos,
-                measurement_plan=measurement_plan,
-                config=backend,
-                shots=shots,
-                verbose=verbose,
-            )
-        else:
-            return run_nexus_pytket(
-                pytket_circuit=transpiled_circuit,
-                config=backend,
-                shots=shots,
-                optimization_level=optimization_level,
-                measurement_plan=measurement_plan,
-                verbose=verbose,
-            )
+        """Direct Quantinuum-path execution; returns the unwrapped counts dict."""
+        adapter = QuantinuumBackend(backend)
+        artifact = CompiledArtifact(
+            payload=transpiled_circuit,
+            backend_metadata={
+                "register_infos": register_infos,
+                "measurement_plan": measurement_plan,
+                "optimization_level": optimization_level,
+            },
+        )
+        result = adapter.run_compiled(artifact, shots, verbose=verbose)
+        return result.raw

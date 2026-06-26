@@ -26,16 +26,18 @@ Readout.apply(qlsa_circuit)            Readout.build_circuits  │
    ↓                                       ↓ (returns N+1)     │
 QuantumCircuit                         list[QuantumCircuit]    │
    ↓                                       ↓                   │
-Transpiler.optimize()                  Transpiler (per circuit)│
+Backend.compile()                      Backend.compile() (×N)  │
    ↓                                       ↓                   │
-Executer.run() ───────┐         ┌── Executer.run() (each)      │
-                      ↓         ↓                              │
-                 MeasurementResult ─────┐                      │
-                                        │                      │
-                                        ▼                      │
+CompiledArtifact                       list[CompiledArtifact]  │
+   ↓                                       ↓                   │
+Backend.run_compiled() ──────┐         ┌── Backend.run_compiled() (×N)
+                             ↓         ↓                       │
+                       MeasurementResult ─────┐                 │
+                                              │                 │
+                                              ▼                 │
               MeasurementResult.get_postselected_counts(register_names, success_criterion)
-                                        │                      │
-                                        ▼                      │
+                                              │                 │
+                                              ▼                 │
 [Single-circuit] Readout.process(result, A, b) → TomographyResult
 [Multi-circuit ] Readout.combine_results(results, A, b, success_criterion) → TomographyResult
                                         │
@@ -136,6 +138,70 @@ There is also a module-level helper `to_counts(result, register_names)`
 that normalises any of `MeasurementResult` / `SamplerPubResult` / `dict`
 into a counts dict, used by single-circuit readouts.
 
+### `Backend` and `CompiledArtifact` ([backends/base.py](../src/qlsas/backends/base.py))
+
+`Backend` is the unified interface every execution target conforms to —
+Aer, IBM Runtime, Quantinuum (Selene + Nexus), and (forthcoming) CUDA-Q.
+Two abstract methods plus a Qrisp-compatible convenience:
+
+```python
+class Backend(ABC):
+    name: str
+
+    def compile(self, qc: QuantumCircuit, optimization_level: int = 2) -> CompiledArtifact: ...
+    def run_compiled(self, artifact: CompiledArtifact, shots: int = 1024, *, verbose=True, **kwargs) -> MeasurementResult: ...
+
+    # Qrisp-compatible convenience: signature matches VirtualBackend.run(qc, shots, token).
+    def run(self, qc: QuantumCircuit, shots: int = 1024, token: str = "") -> MeasurementResult:
+        return self.run_compiled(self.compile(qc), shots)
+
+    @property
+    def supports_multi_circuit(self) -> bool: return True
+```
+
+`CompiledArtifact` is the value object that crosses the compile→run
+boundary:
+
+```python
+@dataclass
+class CompiledArtifact:
+    payload: Any                # QuantumCircuit | pytket.Circuit | future kernel handle
+    register_plan: RegisterPlan
+    backend_metadata: dict      # opaque, backend-specific (e.g. Quantinuum's measurement plan)
+```
+
+The `backend_metadata` channel is what removed the old
+`register_infos` / `measurement_plan` plumbing the solver used to thread
+between `Transpiler` and `Executer`: side-channel data lives inside the
+artifact and is consumed by the same backend that produced it.
+
+| Concrete adapter | Wraps | Module |
+|---|---|---|
+| `QiskitBackend` | `BackendV2` / `IBMBackend` / `AerSimulator` (uses `SamplerV2`) | [backends/qiskit_backend.py](../src/qlsas/backends/qiskit_backend.py) |
+| `QuantinuumBackend` | `QuantinuumBackendConfig` (Guppy/Selene + qnexus paths) | [backends/quantinuum_backend.py](../src/qlsas/backends/quantinuum_backend.py) |
+| `CudaqBackend` | NVIDIA CUDA-Q targets — `nvidia` / `nvidia-fp64` / `nvidia-mgpu` / `nvidia-mqpu` / `qpp-cpu`. Translates Qiskit → CUDA-Q kernel via `from_qiskit_circuit` (with QASM 2 fallback) at the seam. | [backends/cudaq_backend.py](../src/qlsas/backends/cudaq_backend.py) |
+
+`adapt(backend, ibm_options=None)` ([backends/dispatch.py](../src/qlsas/backends/dispatch.py))
+returns the right adapter for a raw backend object and is idempotent on
+already-wrapped `Backend` instances. The Qrisp-shaped `run(qc, shots,
+token)` convenience means a future Qrisp algorithm-layer migration can
+expose any qlsas backend as a `VirtualBackend` via a one-line wrapper —
+no protocol change required at migration time.  The wrapper is provided
+as `qlsas.backends.as_qrisp_backend(backend)`:
+
+```python
+from qrisp.interface import VirtualBackend
+from qlsas.backends import CudaqBackend, as_qrisp_backend
+
+vbackend = VirtualBackend(as_qrisp_backend(CudaqBackend("nvidia-fp64")))
+```
+
+`Transpiler` and `Executer` are now thin facades that dispatch into
+`adapt(backend).compile()` / `.run_compiled()`. They are kept for
+backward compatibility (existing tests, notebooks, and the IBM Runtime
+session lifecycle the refiner consults), but new code should call the
+`Backend` adapter directly.
+
 ### `TomographyResult` ([readout/base.py](../src/qlsas/readout/base.py))
 
 Uniform return type for tomography readouts:
@@ -167,18 +233,28 @@ Module-level free functions (no class wrapper):
 
 ### `QuantumLinearSolver` ([solver.py](../src/qlsas/solver.py))
 
-The orchestrator. `solve(A, b, ...)` does:
+The orchestrator. At construction, builds and caches a `Backend` adapter
+via `adapt(backend, ibm_options=...)` so the rest of the pipeline talks
+to a single interface — no per-call dispatch, no `isinstance` ladder.
+
+`solve(A, b, ...)` does:
 
 1. Call `qlsa.build_circuit(A, b, state_prep)` → `QLSACircuit`.
 2. **Dispatch on readout protocol:**
-   - If `isinstance(readout, MultiCircuitReadout)` → `_solve_multi`. Calls `build_circuits` → transpile each → execute each → `combine_results` → `TomographyResult` → `SolveResult`.
-   - Else → single-circuit path. Calls `readout.apply` → transpile → execute → `readout.process` → `TomographyResult` → `SolveResult`. If `target_successful_shots` is set, repeats execution batches until enough successful shots accumulate.
+   - If `isinstance(readout, MultiCircuitReadout)` → `_solve_multi`. Verifies `self._adapter.supports_multi_circuit`; otherwise calls `build_circuits` → `adapter.compile` per circuit → `adapter.run_compiled` per artifact → `combine_results` → `TomographyResult` → `SolveResult`.
+   - Else → single-circuit path. Calls `readout.apply` → `adapter.compile` → `adapter.run_compiled` → `readout.process` → `TomographyResult` → `SolveResult`. If `target_successful_shots` is set, repeats execution batches until enough successful shots accumulate.
 3. Return `SolveResult`.
 
 The internal helper `_to_solve_result(proc_result, ...)` wraps a
 `TomographyResult` into a `SolveResult`, copying through `direction`,
 `alpha`, and metadata. It also handles the legacy 3-tuple return from
 `SwapTestReadout` (`(value, success_rate, residual)`).
+
+The IBM Runtime `Session` (when one is open) lives on `Executer`; the
+solver consults `executer.active_session` and forwards it to
+`adapter.run_compiled(..., session=...)` so jobs share priority
+scheduling. A future change will move session ownership onto the backend
+adapter itself.
 
 Post-selection in the shot-accumulation paths (`_ibm_successful_shots`,
 `_quantinuum_successful_shots`, `_trim_counts_to_target`) uses a single
@@ -251,6 +327,19 @@ For QSVT specifically, the `SolveResult.direction` contract means the
 existing `Refiner` will work unchanged once a QSVT QLSA exists. The only
 work remaining for full QSVT support is the algorithm itself; the
 readout/post-processing/refiner pipeline is QSVT-ready.
+
+### Adding a new execution backend (e.g. CUDA-Q)
+
+1. Subclass `Backend` ([backends/base.py](../src/qlsas/backends/base.py)).
+2. Implement `compile(qc, optimization_level)` returning a `CompiledArtifact` whose `payload` is whatever the backend ingests (a Qiskit `QuantumCircuit`, a pytket `Circuit`, a kernel handle). Stash any side-channel data (measurement plans, register layouts) in `backend_metadata`.
+3. Implement `run_compiled(artifact, shots, *, verbose, **kwargs)` returning a `MeasurementResult`. Accept and ignore unknown kwargs (the legacy `Executer.run` may forward `session` or `ibm_options` that aren't relevant to your backend).
+4. Set `supports_multi_circuit = False` if the multi-circuit dispatch path (HRF, future shadow tomography) has not been validated against your backend yet — the solver will raise a clear error early.
+5. Register the new type in `adapt()` ([backends/dispatch.py](../src/qlsas/backends/dispatch.py)) so `QuantumLinearSolver` can wrap a raw backend object handed in by the user.
+6. Optional: override `run(qc, shots, token)` if your backend has a more efficient compile+run path than the default. The default chains `compile` and `run_compiled`.
+
+The solver, transpiler facade, executer facade, refiner, all readouts,
+and the post-processor work unchanged. Only `adapt()` and the new
+adapter file change.
 
 ### Repeat-until-success scaffolding (for low-success-probability QLSAs)
 
@@ -362,9 +451,116 @@ writes a custom iterative refiner / RUS loop           | Read `.direction` (unit
 - New architecture tests are in [tests/test_architecture_refactor.py](../tests/test_architecture_refactor.py) — covers single + multi-register `SuccessCriterion`, `get_postselected_counts`, and a synthetic `MultiCircuitReadout` proving generic dispatch.
 - The HRF integration test `test_hrf_vs_measure_x_agreement` ([tests/test_hrf_readout.py](../tests/test_hrf_readout.py)) verifies that HRF and MeasureX agree on direction (cosine similarity > 0.8 across 8192 shots) — this is the regression net for the unit-norm-direction contract in `HRFReadout.combine_results()`.
 
-## What's not addressed by this refactor
+## What changed in the Backend protocol refactor (PR A1 + A2)
 
-- **The Quantinuum / IBM dispatch in the executer/solver** — orthogonal concern, not touched.
-- **Resource estimation, transpilation, error mitigation** — orthogonal, not touched.
+The previous refactor (covered in the section above) explicitly deferred
+"the Quantinuum / IBM dispatch in the executer/solver" as an orthogonal
+concern. PR A1 + A2 closes that gap as part of the CUDA-Q integration
+prep work.
+
+### New public APIs
+
+| API | Purpose |
+|---|---|
+| `qlsas.backends.base.Backend` | ABC every execution target conforms to. `compile`, `run_compiled`, Qrisp-shaped `run(qc, shots, token)`. |
+| `qlsas.backends.base.CompiledArtifact` | Value object crossing the compile→run boundary. Carries the post-compile payload plus opaque `backend_metadata` (replaces the old `register_infos` / `measurement_plan` plumbing). |
+| `qlsas.backends.qiskit_backend.QiskitBackend` | Adapter for Aer / IBM / `BackendV2`. |
+| `qlsas.backends.quantinuum_backend.QuantinuumBackend` | Adapter for `QuantinuumBackendConfig` (Selene + Nexus). |
+| `qlsas.backends.dispatch.adapt(backend, *, ibm_options=None)` | Wraps a raw backend in the right adapter; idempotent on `Backend` instances. |
+| `Backend.supports_multi_circuit` | Capability flag the solver consults instead of `isinstance(backend, QuantinuumBackendConfig)`. |
+| `Executer.active_session` | Public accessor for the IBM Runtime `Session` the solver forwards to `adapter.run_compiled(..., session=...)`. |
+
+### Removed / rewired
+
+- `QuantumLinearSolver._is_quantinuum` is gone. Per-backend behaviour now goes through `self._adapter` (built once in `__init__` via `adapt()`).
+- `Executer.run()`'s `register_infos` / `measurement_plan` / `optimization_level` kwargs are still accepted for back-compat but the solver no longer passes them — that data lives in `CompiledArtifact.backend_metadata` and is consumed by the same backend that produced it.
+- `Transpiler` and `Executer` are now thin facades over `adapt(backend).compile()` / `.run_compiled()`. The public `Transpiler.optimize()` / `Executer.run()` / `Executer.run_qiskit()` / `Executer.run_quantinuum()` surfaces all still work; existing notebooks and tests are unchanged.
+- `_solve_multi`'s hard-coded `if self._is_quantinuum: raise NotImplementedError` is now `if not self._adapter.supports_multi_circuit:` — adding a future backend that does support multi-circuit readouts requires zero solver changes.
+
+### Qrisp readiness
+
+`Backend.run(qc, shots, token)` deliberately mirrors Qrisp's
+[`VirtualBackend.run`](https://qrisp.eu/reference/Backend%20Interface/QiskitRuntimeBackend.html).
+When the algorithm layer migrates to Qrisp, every existing qlsas
+backend can be exposed as a Qrisp `VirtualBackend` via a one-line
+adapter (`lambda qc, shots, token: backend.run(qc, shots, token).get_counts()`),
+not a rewrite.
+
+### Migration checklist for downstream code
+
+If your code …                                          | Do this
+:------------------------------------------------------|:--------
+constructs a `QuantumLinearSolver(...)` with `backend=AerSimulator()`     | No change. The solver wraps it in a `QiskitBackend` adapter automatically.
+constructs a `QuantumLinearSolver(...)` with `backend=QuantinuumBackendConfig(...)` | No change. Wrapped in `QuantinuumBackend` automatically.
+calls `executer.run(circuit, backend, shots, register_infos=..., measurement_plan=...)` directly | No change required for back-compat, but new code should call `adapter.run_compiled(artifact, shots)` instead and let `Backend.compile` produce the artifact.
+checks `isinstance(backend, QuantinuumBackendConfig)` to branch behaviour | Replace with a capability check on the adapter (`adapt(backend).supports_multi_circuit` / `.name` / future capability flags).
+adds a new execution target (CUDA-Q, custom simulator, future hardware) | Subclass `Backend` and register in `adapt()`. See "Adding a new execution backend" above.
+
+## What changed in PR B (CUDA-Q backend)
+
+PR B is the first concrete realisation of the "Adding a new execution
+backend" extension point introduced by the Backend protocol refactor.
+Algorithm code (HHL, eigenvalue oracles, state prep) is unchanged.
+
+### New public APIs
+
+| API | Purpose |
+|---|---|
+| `qlsas.backends.cudaq_backend.CudaqBackend` | GPU-accelerated execution via NVIDIA CUDA-Q. Targets: `nvidia` / `nvidia-fp64` / `nvidia-mgpu` / `nvidia-mqpu` / `qpp-cpu`. |
+| `qlsas.backends.as_qrisp_backend(backend)` | Wraps any `Backend` for use with Qrisp's `VirtualBackend` (one-liner; the protocol shape was designed for this). |
+| ``cudaq`` pytest marker | Tests that require `cuda-quantum` importable; they skip cleanly elsewhere. |
+| `pip install qlsas[cudaq]` | Optional dependency extra. CUDA-Q is officially Linux-only; macOS/Windows installs will skip the cudaq tests. |
+
+### Translation seam
+
+Algorithms keep building Qiskit `QuantumCircuit`s.  At
+`CudaqBackend.compile`:
+
+1. `transpile(qc, basis_gates=[...])` decomposes high-level gates into a
+   CUDA-Q-ingestible basis.
+2. `qc.decompose(reps=4)` flattens `HamiltonianGate`, `StatePreparation`,
+   and any remaining controlled boxes that QASM 2 cannot represent.
+3. `cudaq.from_qiskit_circuit` (preferred) or a QASM 2 round-trip
+   produces the CUDA-Q kernel.
+
+This decomposition step inflates gate counts versus Aer's native
+`HamiltonianGate` execution.  That is the documented cost of crossing
+the boundary; the Qrisp algorithm-layer migration is the long-term path
+to native-CUDA-Q kernels (Qrisp generates them directly), so we
+deliberately do **not** maintain a parallel `@cudaq.kernel` HHL
+implementation in this repo.
+
+### Bitstring endianness — converged on the right convention
+
+CUDA-Q joins per-register measurements with the **first**-measured
+register at the *leftmost* (MSB) of the bitstring; Qiskit's `join_data`
+places the first-named register at the *rightmost* (LSB).  A whole-
+string reversal flips between the two — and as a happy algebraic side
+effect, the within-register bit order (which Qiskit and CUDA-Q also
+disagree on) flips correctly too.  So a single
+``CudaqBackend._counts_from_sample_result`` reversal is sufficient.
+
+This convention is independently corroborated by the parallel
+`cuda-q-refactor` branch's `post_processor.py`, whose `key[0] == '1'`
+ancilla check and `int(key[-1:0:-1], base=2)` solution-register reverse
+are exactly the layout that `[::-1]` translates from.  We are not
+guessing — both code paths converge on the same byte order.
+
+`tests/test_cudaq_backend.py::TestBellParity::test_bell_state_byte_exact`
+runs an Aer / `qpp-cpu` parity check on the Bell state and is the
+**regression net** if a future CUDA-Q upgrade ever flips this; the fix
+is to set `CudaqBackend.REVERSE_BITSTRINGS = False`.
+
+### Process-global `set_target` lock
+
+`cudaq.set_target` mutates process-global state, so two `CudaqBackend`
+instances with different targets in the same process would race.
+`CudaqBackend.run_compiled` serialises `set_target` + `sample` under a
+module-level `threading.Lock`.
+
+## What's not addressed by these refactors
+
+- **Resource estimation, transpilation passes, error mitigation** — orthogonal, not touched.
 - **The `MeasureXReadout` "cheat" that calls `LA.solve` for sign correction** — by design (it's a benchmarking readout). For honest end-to-end quantum behaviour, use `HRFReadout`.
 - **Repeat-until-success policy enrichment** — the existing `target_successful_shots` machinery already handles RUS-style shot accumulation and now reads from `success_criterion`. Any QSVT-specific RUS extensions can build on that.
+- **IBM Runtime session ownership** — still on `Executer`. A follow-up will move it onto the backend adapter so non-IBM backends can offer their own session-like lifecycles (e.g. a Quantinuum batch context, a CUDA-Q target lock).
