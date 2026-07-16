@@ -1,14 +1,11 @@
 # QLSA Toolkit
 
-A toolkit for running Quantum Linear Systems Algorithms (QLSAs) on quantum hardware, supporting multiple algorithms across different quantum hardware providers.
+A toolkit for running the **HHL** (Harrow-Hassidim-Lloyd) Quantum Linear Systems Algorithm (QLSA) on quantum hardware, across different quantum hardware providers.
 
 ## Overview
 
-Supported algorithms:
+Implemented algorithm:
 - **HHL** (Harrow-Hassidim-Lloyd)
-- **QSVT** (Quantum Singular Value Transformation)
-- **VQLSA** (Variational Quantum Linear Systems Algorithm)
-- **QHD** (Quantum Hamiltonian Descent)
 
 Supported backends:
 - **IBM** (via Qiskit)
@@ -127,7 +124,7 @@ Three swappable strategy components plug into `QuantumLinearSolver`:
 
 - **State preparation** (`state_prep.py`) — how `b` is loaded into a register.
 - **QLSA algorithm** (`algorithms/`) — produces a `QLSACircuit` carrying the core circuit + a `SuccessCriterion` that defines which classical-register values mark a successful shot.
-- **Readout** (`readout/`) — appends measurement gates to the QLSA circuit and post-processes the results. Single-circuit readouts (`MeasureXReadout`, `SwapTestReadout`) implement `apply` + `process`. Multi-circuit readouts (`HRFReadout`) subclass `MultiCircuitReadout` and implement `build_circuits` + `combine_results`. The solver dispatches on the protocol, so adding a new readout — or a new QLSA like QSVT with a multi-register success criterion — needs zero changes to the orchestrator.
+- **Readout** (`readout/`) — appends measurement gates to the QLSA circuit and post-processes the results. Single-circuit readouts (`MeasureXReadout`, `SwapTestReadout`) implement `apply` + `process`. Multi-circuit readouts (`HRFReadout`) subclass `MultiCircuitReadout` and implement `build_circuits` + `combine_results`. The solver dispatches on the protocol, so adding a new readout — or a new QLSA with a multi-register success criterion — needs zero changes to the orchestrator.
 
 For a full architectural reference (data flow diagram, component
 responsibilities, how to add new QLSA algorithms or readout strategies, and
@@ -136,7 +133,7 @@ the migration notes from the recent refactor), see
 
 Key modules:
 
-- `src/qlsas/algorithms/`: algorithm definitions; `HHL` is the main implemented QLSA today.
+- `src/qlsas/algorithms/`: the `HHL` algorithm definition and shared QLSA interface.
 - `src/qlsas/readout/`: pluggable readout strategies and the `Readout` / `MultiCircuitReadout` ABCs.
 - `src/qlsas/state_prep.py`: state preparation utilities for loading `b` into a circuit.
 - `src/qlsas/solver.py`: the main orchestration entry point used by examples and notebooks.
